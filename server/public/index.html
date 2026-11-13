@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Viz</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --sub: #5d6575; --line: #d9dde4;
+  --orch: #3b4252; --opus: #7c4dff; --sonnet: #1e88e5; --haiku: #2e9d5b; --fable: #ef6c00; --other: #78808f;
+  --run: #1e88e5; --done: #2e9d5b; --q: #e53935; --wait: #f59e0b;
+  --shadow: 0 1px 2px rgba(20,30,50,.06), 0 4px 14px rgba(20,30,50,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --panel: #1b2029; --ink: #e8ebf1; --sub: #9aa3b2; --line: #2d3440;
+    --orch: #7d8698; --opus: #a385ff; --sonnet: #5aa9f0; --haiku: #4fc27f; --fable: #ff9a4a; --other: #8d95a3;
+    --run: #5aa9f0; --done: #4fc27f; --q: #ff6b66; --wait: #fbbf24;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line);
+  background: var(--panel); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
+.conn { width: 9px; height: 9px; border-radius: 50%; background: var(--q); }
+.conn.ok { background: var(--done); }
+header .sp { flex: 1; }
+header label { color: var(--sub); font-size: 13px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.legend { display: flex; gap: 10px; font-size: 12px; color: var(--sub); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+main { padding: 20px; display: flex; flex-direction: column; gap: 24px; max-width: 1400px; margin: 0 auto; }
+.empty { text-align: center; color: var(--sub); padding: 80px 16px; }
+.empty code { background: var(--panel); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--line); }
+
+.board { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 16px 18px 22px; position: relative; }
+.board-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.board-head .name { font-weight: 700; font-size: 15px; }
+.board-head .cwd { color: var(--sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage { position: relative; }
+svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+svg.wires path { fill: none; stroke: var(--line); stroke-width: 2; }
+svg.wires path.running { stroke: var(--run); stroke-dasharray: 6 6; animation: flow 1s linear infinite; }
+svg.wires path.question { stroke: var(--q); }
+svg.wires path.done { stroke: var(--done); opacity: .6; }
+@keyframes flow { to { stroke-dashoffset: -12; } }
+
+.orch-row { display: flex; justify-content: center; }
+.card { background: var(--panel); border: 1.5px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  box-shadow: var(--shadow); position: relative; cursor: pointer; transition: transform .15s, border-color .2s; }
+.card:hover { transform: translateY(-2px); }
+.card .stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 5px; border-radius: 12px 0 0 12px; background: var(--m, var(--other)); }
+.card.orch { width: min(560px, 100%); border-width: 2px; border-color: var(--m, var(--opus)); }
+.card.agent { width: 250px; }
+.card.running { border-color: color-mix(in srgb, var(--run) 55%, var(--line)); }
+.card.question { border-color: var(--q); box-shadow: 0 0 0 3px color-mix(in srgb, var(--q) 22%, transparent), var(--shadow); animation: glow 1.6s ease-in-out infinite; }
+.card.ghost { opacity: .6; border-style: dashed; }
+@keyframes glow { 50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--q) 10%, transparent), var(--shadow); } }
+
+.top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; padding-left: 4px; }
+.badge { white-space: nowrap; flex: none; font-size: 11px; font-weight: 700; color: #fff; background: var(--m, var(--other)); border-radius: 999px; padding: 1px 8px; letter-spacing: .03em; }
+.type { font-size: 12px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pill { white-space: nowrap; flex: none; margin-left: auto; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; display: inline-flex; align-items: center; gap: 5px; }
+.pill.running { color: var(--run); background: color-mix(in srgb, var(--run) 12%, transparent); }
+.pill.done, .pill.idle { color: var(--done); background: color-mix(in srgb, var(--done) 12%, transparent); }
+.pill.question { color: var(--q); background: color-mix(in srgb, var(--q) 12%, transparent); }
+.pill.waiting { color: var(--wait); background: color-mix(in srgb, var(--wait) 15%, transparent); }
+.pill.ended { color: var(--sub); background: color-mix(in srgb, var(--sub) 12%, transparent); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.running .dot, .pill.waiting .dot { animation: blink 1s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+.role { font-weight: 700; font-size: 14.5px; padding-left: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.orch .role { font-weight: 600; font-size: 14px; -webkit-line-clamp: 3; }
+.lbl { font-size: 11px; color: var(--sub); padding-left: 4px; margin-top: 6px; }
+.now { font-size: 12.5px; color: var(--sub); padding-left: 4px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now b { color: var(--ink); font-weight: 600; }
+.report { font-size: 12.5px; color: var(--sub); padding-left: 4px; margin-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.meta { display: flex; gap: 10px; font-size: 11px; color: var(--sub); padding-left: 4px; margin-top: 8px; }
+.qbox { margin-top: 8px; background: color-mix(in srgb, var(--q) 9%, transparent); border-radius: 8px; padding: 6px 9px 6px 8px; font-size: 12.5px; }
+.qbox .qh { color: var(--q); font-weight: 700; font-size: 11.5px; margin-bottom: 2px; }
+.qbox ul { margin: 0; padding-left: 16px; }
+.qbox .more { font-size: 11.5px; color: var(--sub); margin-top: 2px; }
+.qmark { position: absolute; top: -12px; right: -10px; width: 26px; height: 26px; border-radius: 50%; background: var(--q); color: #fff;
+  font-weight: 800; display: grid; place-items: center; font-size: 15px; box-shadow: var(--shadow); }
+.notice { margin-top: 8px; font-size: 12.5px; color: var(--wait); padding-left: 4px; }
+
+.kids { display: flex; flex-wrap: wrap; gap: 26px 22px; justify-content: center; margin-top: 56px; }
+.older { margin-top: 18px; text-align: center; font-size: 12px; color: var(--sub); }
+
+aside { position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100%); background: var(--panel); border-left: 1px solid var(--line);
+  box-shadow: -8px 0 30px rgba(0,0,0,.15); transform: translateX(105%); transition: transform .2s; z-index: 10; display: flex; flex-direction: column; }
+aside.open { transform: none; }
+aside .ah { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+aside .ah button { margin-left: auto; background: none; border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+aside .ab { overflow: auto; padding: 14px 16px 30px; }
+aside h3 { font-size: 12px; color: var(--sub); margin: 18px 0 6px; font-weight: 600; }
+aside pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12.5px; margin: 0; max-height: 40vh; overflow: auto; }
+.log { list-style: none; margin: 0; padding: 0; font-size: 12.5px; }
+.log li { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.log .tm { color: var(--sub); font-variant-numeric: tabular-nums; flex: none; }
+.log .tl { font-weight: 600; flex: none; }
+.log .sm { color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { main { padding: 12px 16px; } .card.agent { width: 100%; } .legend { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="conn" id="conn" title="サーバー接続"></span>
+  <h1>Agent Viz</h1>
+  <div class="legend">
+    <span><i style="background:var(--opus)"></i>Opus</span>
+    <span><i style="background:var(--sonnet)"></i>Sonnet</span>
+    <span><i style="background:var(--haiku)"></i>Haiku</span>
+    <span><i style="background:var(--q)"></i>疑問あり</span>
+  </div>
+  <span class="sp"></span>
+  <label><input type="checkbox" id="showOld"> 前の指示の分も表示</label>
+</header>
+<main id="main"><div class="empty">Claude Code でセッションを始めると、ここに統括とサブエージェントが表示されます。</div></main>
+<aside id="drawer"><div class="ah"><span id="dTitle"></span><button id="dClose">閉じる</button></div><div class="ab" id="dBody"></div></aside>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let state = { sessions: [] };
+let selected = null; // { sid, aid } aid=null は統括
+let showOld = false;
+try { showOld = localStorage.getItem('agentviz.showOld') === '1'; } catch {}
+$('#showOld').checked = showOld;
+$('#showOld').onchange = (e) => { showOld = e.target.checked; try { localStorage.setItem('agentviz.showOld', showOld ? '1' : '0'); } catch {} render(); };
+
+function modelKey(m) {
+  m = (m || '').toLowerCase();
+  if (m.includes('opus')) return 'opus';
+  if (m.includes('sonnet')) return 'sonnet';
+  if (m.includes('haiku')) return 'haiku';
+  if (m.includes('fable')) return 'fable';
+  return 'other';
+}
+function modelLabel(m) {
+  const k = modelKey(m);
+  if (k === 'other') return m ? m : '既定';
+  const v = (m.match(/(\d+(?:[-.]\d+)?)$/) || [])[1];
+  return k[0].toUpperCase() + k.slice(1) + (v ? ' ' + v.replace('-', '.') : '');
+}
+const STATUS = { running: '作業中', done: '完了', question: '疑問あり', idle: '待機中', waiting: 'あなたの確認待ち', ended: '終了' };
+function dur(ms) { const s = Math.max(0, Math.round(ms / 1000)); return s < 60 ? `${s}秒` : `${Math.floor(s / 60)}分${s % 60}秒`; }
+function firstLine(t) { return ((t || '').split('\n').map((x) => x.trim()).find((x) => x && !x.startsWith('```') && !x.startsWith('<')) || '').replace(/^#+\s*/, '').replace(/\*\*/g, ''); }
+function qList(qs, max) { const v = max ? qs.slice(0, max) : qs; return `<ul>${v.map((q) => `<li>${esc(q)}</li>`).join('')}</ul>${max && qs.length > max ? `<div class="more">ほか ${qs.length - max} 件（クリックで詳細）</div>` : ''}`; }
+function clock(t) { const d = new Date(t); return d.toTimeString().slice(0, 8); }
+
+function agentCard(s, a) {
+  const k = modelKey(a.model);
+  const now = a.activity && !a.activity.done && a.status === 'running'
+    ? `<div class="now">今: <b>${esc(a.activity.tool)}</b> ${esc(a.activity.summary)}</div>` : '';
+  const rep = a.status !== 'running' && a.message ? `<div class="report">${esc(firstLine(a.message))}</div>` : '';
+  const qs = a.questions?.length ? `<div class="qbox"><div class="qh">疑問・確認したいこと</div>${qList(a.questions, 2)}</div>` : '';
+  const elapsed = (a.endedAt || Date.now()) - a.startedAt;
+  return `<div class="card agent ${a.status}" data-sid="${esc(s.id)}" data-aid="${esc(a.id)}" style="--m:var(--${k})">
+    <span class="stripe"></span>${a.status === 'question' ? '<span class="qmark">?</span>' : ''}
+    <div class="top"><span class="badge">${esc(modelLabel(a.model))}</span><span class="type">${esc(a.type)}</span>
+      <span class="pill ${a.status}"><span class="dot"></span>${STATUS[a.status]}</span></div>
+    <div class="lbl">担当</div>
+    <div class="role">${esc(a.description || firstLine(a.prompt) || '(説明なし)')}</div>
+    ${now}${rep}${qs}
+    <div class="meta"><span>⏱ ${dur(elapsed)}</span><span>🔧 ${a.toolCount}回</span>${a.tokens ? `<span>${(a.tokens / 1000).toFixed(1)}k tok</span>` : ''}${a.background ? '<span>バックグラウンド</span>' : ''}</div>
+  </div>`;
+}
+
+function ghostCard(c) {
+  const k = modelKey(c.model);
+  return `<div class="card agent ghost" style="--m:var(--${k})"><span class="stripe"></span>
+    <div class="top"><span class="badge">${esc(modelLabel(c.model))}</span><span class="type">${esc(c.subagent_type)}</span>
+    <span class="pill running"><span class="dot"></span>起動中</span></div>
+    <div class="lbl">担当</div><div class="role">${esc(c.description || '')}</div></div>`;
+}
+
+function orchCard(s) {
+  const st = s.status;
+  const now = s.activity && !s.activity.done && st === 'running'
+    ? `<div class="now">今: <b>${esc(s.activity.tool)}</b> ${esc(s.activity.summary)}</div>` : '';
+  const rep = st !== 'running' && s.message ? `<div class="report">${esc(firstLine(s.message))}</div>` : '';
+  const qs = s.questions?.length ? `<div class="qbox"><div class="qh">統括からあなたへの質問</div>${qList(s.questions, 4)}</div>` : '';
+  const notice = s.notice ? `<div class="notice">⚠ ${esc(s.notice)}</div>` : '';
+  const kidsRunning = s.agents.some((a) => a.turn === s.turn && a.status === 'running');
+  const pillCls = kidsRunning && st !== 'waiting' ? 'running' : s.questions?.length && st !== 'running' ? 'question' : st;
+  const pillText = pillCls === 'question' ? '質問あり' : kidsRunning && st !== 'running' && st !== 'waiting' ? 'サブエージェント待ち' : STATUS[st];
+  return `<div class="orch-row"><div class="card orch ${pillCls === 'question' ? 'question' : ''}" data-sid="${esc(s.id)}" data-aid="" style="--m:var(--orch)">
+    <span class="stripe"></span>${pillCls === 'question' ? '<span class="qmark">?</span>' : ''}
+    <div class="top"><span class="badge">統括</span><span class="type">メインセッション</span>
+      <span class="pill ${pillCls}"><span class="dot"></span>${pillText}</span></div>
+    <div class="lbl">あなたの指示</div>
+    <div class="role">${esc(s.prompt || '(まだ指示はありません)')}</div>
+    ${now}${notice}${rep}${qs}
+  </div></div>`;
+}
+
+function render(fromTick) {
+  const main = $('#main');
+  if (!state.sessions.length) {
+    main.innerHTML = '<div class="empty">Claude Code でセッションを始めると、ここに統括とサブエージェントが表示されます。</div>';
+    return;
+  }
+  main.innerHTML = state.sessions.map((s) => {
+    const all = s.agents;
+    const cur = all.filter((a) => a.turn === s.turn);
+    const shown = showOld ? all : cur;
+    const hidden = all.length - shown.length;
+    const kids = shown.map((a) => agentCard(s, a)).join('') + s.pending.map(ghostCard).join('');
+    return `<section class="board ${s.status === 'ended' ? 'ended' : ''}" data-sid="${esc(s.id)}">
+      <div class="board-head"><span class="name">${esc(s.name)}</span><span class="cwd">${esc(s.cwd)}</span></div>
+      <div class="stage"><svg class="wires"></svg>${orchCard(s)}
+        ${kids ? `<div class="kids">${kids}</div>` : ''}
+        ${hidden ? `<div class="older">前の指示で動いたエージェント ${hidden} 件を非表示中</div>` : ''}
+      </div></section>`;
+  }).join('');
+  drawWires();
+  if (selected && !fromTick) openDrawer(selected.sid, selected.aid, true);
+}
+
+function drawWires() {
+  document.querySelectorAll('.stage').forEach((stage) => {
+    const svg = stage.querySelector('svg.wires');
+    const orch = stage.querySelector('.card.orch');
+    const base = stage.getBoundingClientRect();
+    const o = orch.getBoundingClientRect();
+    const x0 = o.left + o.width / 2 - base.left, y0 = o.bottom - base.top;
+    let paths = '';
+    stage.querySelectorAll('.kids .card').forEach((c) => {
+      const r = c.getBoundingClientRect();
+      const x1 = r.left + r.width / 2 - base.left, y1 = r.top - base.top;
+      const my = (y0 + y1) / 2;
+      const cls = c.classList.contains('question') ? 'question' : c.classList.contains('done') ? 'done' : 'running';
+      paths += `<path class="${cls}" d="M${x0},${y0} C${x0},${my} ${x1},${my} ${x1},${y1}"/>`;
+    });
+    svg.innerHTML = paths;
+  });
+}
+
+function openDrawer(sid, aid, refresh) {
+  const s = state.sessions.find((x) => x.id === sid);
+  if (!s) return;
+  const a = aid ? s.agents.find((x) => x.id === aid) : null;
+  if (aid && !a) return;
+  selected = { sid, aid };
+  const tgt = a || s;
+  $('#dTitle').innerHTML = a
+    ? `<span class="badge" style="--m:var(--${modelKey(a.model)})">${esc(modelLabel(a.model))}</span> <b>${esc(a.description || a.type)}</b>`
+    : `<span class="badge" style="--m:var(--orch)">統括</span> <b>${esc(s.name)}</b>`;
+  const log = [...tgt.log].reverse().map((l) => `<li><span class="tm">${clock(l.t)}</span><span class="tl">${esc(l.tool)}</span><span class="sm">${esc(l.summary)}</span></li>`).join('');
+  $('#dBody').innerHTML = `
+    ${tgt.questions?.length ? `<h3>疑問・確認したいこと</h3><div class="qbox"><ul>${tgt.questions.map((q) => `<li>${esc(q)}</li>`).join('')}</ul></div>` : ''}
+    <h3>${a ? '統括からの依頼内容' : 'あなたの指示'}</h3><pre>${esc(a ? a.prompt : s.prompt) || '—'}</pre>
+    <h3>${a ? '最終報告' : '統括の最新の返答'}</h3><pre>${esc(tgt.message) || '(まだありません)'}</pre>
+    <h3>作業ログ（新しい順）</h3><ul class="log">${log || '<li><span class="sm">まだありません</span></li>'}</ul>`;
+  if (!refresh) $('#drawer').classList.add('open');
+}
+$('#main').addEventListener('click', (e) => {
+  const c = e.target.closest('.card[data-sid]');
+  if (c) openDrawer(c.dataset.sid, c.dataset.aid || null);
+});
+$('#dClose').onclick = () => { $('#drawer').classList.remove('open'); selected = null; };
+window.addEventListener('resize', drawWires);
+setInterval(() => { if (state.sessions.some((s) => s.status === 'running')) render(true); }, 1000);
+
+function connect() {
+  const es = new EventSource('stream');
+  es.onopen = () => $('#conn').classList.add('ok');
+  es.onmessage = (m) => { state = JSON.parse(m.data); render(); };
+  es.onerror = () => { $('#conn').classList.remove('ok'); };
+}
+connect();
+</script>
+</body>
+</html>

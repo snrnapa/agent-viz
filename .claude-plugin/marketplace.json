@@ -1,0 +1,14 @@
+{
+  "name": "agent-viz",
+  "description": "Claude Code のサブエージェントの分担を図で見るツール",
+  "owner": {
+    "name": "snrnapa"
+  },
+  "plugins": [
+    {
+      "name": "agent-viz",
+      "source": "./",
+      "description": "統括エージェントとサブエージェントの分担・進捗・疑問をブラウザで図として表示する"
+    }
+  ]
+}

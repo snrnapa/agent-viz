@@ -1,0 +1,6 @@
+{
+  "name": "agent-viz",
+  "version": "0.1.0",
+  "description": "統括エージェントとサブエージェントの分担・進捗・疑問をブラウザで図として表示する",
+  "author": { "name": "snrnapa" }
+}
