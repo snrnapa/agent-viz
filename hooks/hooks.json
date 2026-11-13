@@ -22,6 +22,18 @@
         ]
       }
     ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/ask.mjs\"",
+            "timeout": 150
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "*",
@@ -30,6 +42,16 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/hook.mjs\"",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/ask.mjs\"",
+            "timeout": 330
           }
         ]
       }
@@ -75,6 +97,15 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/hook.mjs\"",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/ask.mjs\"",
+            "timeout": 650
           }
         ]
       }
