@@ -6,11 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { allowedHosts, checkRequest, loadOrCreateToken, mayReceiveToken, tokensEqual } from './auth.mjs';
 import { AskStore, KINDS } from './asks.mjs';
+import { createWorkspace, recordWorkspace } from './workspace.mjs';
 
 const PORT = Number(process.env.AGENT_VIZ_PORT || 4777);
 const HOST = process.env.AGENT_VIZ_HOST || '127.0.0.1';
 const here = path.dirname(fileURLToPath(import.meta.url));
-const INDEX = path.join(here, 'public', 'index.html');
 
 // 盤面からの回答（許可・質問・次の指示）用。設計は docs/board-input-design.md
 const { token: TOKEN, persisted: TOKEN_PERSISTED } = loadOrCreateToken(PORT);
@@ -25,6 +25,11 @@ const asks = new AskStore({ onChange: scheduleBroadcast });
 /** @type {Map<string, any>} */
 const sessions = new Map();
 const clients = new Set();
+// ワークスペース画面（端末・プレビュー）。AGENT_VIZ_TERMINAL=0 で端末の操作を無効にする
+const workspace = createWorkspace({ port: PORT, token: TOKEN, sessions, enabled: process.env.AGENT_VIZ_TERMINAL !== '0' });
+const PAGES = {
+  '/': 'index.html', '/index.html': 'index.html', '/workspace': 'workspace.html',
+};
 
 const MAX_LOG = 40;
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -125,6 +130,9 @@ function handle(ev) {
   if (!ev || !ev.session_id || !ev.event) return;
   if (RECORD) { try { fs.appendFileSync(RECORD, JSON.stringify(ev) + '\n'); } catch {} }
   const s = getSession(ev);
+  recordWorkspace(s, ev);
+  // 名前の無いイベントも届くので、あるときだけ置き換える
+  if (typeof ev.title === 'string' && ev.title.trim()) s.title = ev.title.slice(0, 201);
   const a = ev.agent_id ? s.agents[ev.agent_id] : null;
 
   switch (ev.event) {
@@ -252,6 +260,8 @@ function snapshot(redact = false) {
         agents: Object.values(rest.agents).sort((x, y) => x.startedAt - y.startedAt),
         followup: asks.isFollowup(rest.id),
         asks: redact ? [] : asks.listFor(rest.id),
+        term: redact ? undefined : rest.term,
+        files: redact ? [] : rest.files || [],
       })),
   };
 }
@@ -354,6 +364,8 @@ async function apiAsk(req, res) {
   if (typeof b.wait_ms !== 'number' || !Number.isFinite(b.wait_ms)) throw bad('invalid wait_ms');
   // 盤面に出ていないセッションの ask は誰にも見えないので、待たずに端末へ戻す
   if (!sessions.has(b.session_id) || !asks.canWait(b.kind, b.session_id)) return res.writeHead(204).end();
+  // 画面から起動した端末のセッションは、許可と質問をその端末にすぐ出す（盤面で待つと端末で答えられないため）
+  if (b.kind !== 'followup' && sessions.get(b.session_id).term) return res.writeHead(204).end();
   const ask = asks.create({ session_id: b.session_id, kind: b.kind, payload: b.payload, waitMs: b.wait_ms });
   if (!ask) return sendJson(res, 429, { error: 'too many pending asks' });
   // 待つ側の切断で取り下げる。Node 16 以降 req の close は本文読了時にも発火するので、res を見る
@@ -405,6 +417,7 @@ const server = http.createServer((req, res) => {
     req.resume();
     return sendJson(res, check.status, { error: check.reason });
   }
+  if (workspace.handle(req, res, url)) return;
   if (req.method === 'POST' && url.pathname === '/api/ask') return handleApi(res, () => apiAsk(req, res));
   if (req.method === 'POST' && url.pathname === '/api/answer') return handleApi(res, () => apiAnswer(req, res));
   if (req.method === 'POST' && url.pathname === '/api/presence') return handleApi(res, () => apiPresence(req, res));
@@ -448,9 +461,10 @@ const server = http.createServer((req, res) => {
     res.writeHead(204).end();
     return;
   }
-  if (url.pathname === '/' || url.pathname === '/index.html') {
-    fs.readFile(INDEX, 'utf8', (err, html) => {
-      if (err) return res.writeHead(500).end('index.html not found');
+  if (Object.hasOwn(PAGES, url.pathname)) {
+    const page = PAGES[url.pathname];
+    fs.readFile(path.join(here, 'public', page), 'utf8', (err, html) => {
+      if (err) return res.writeHead(500).end(`${page} not found`);
       let out = html;
       // ループバックからの接続、または ?key= が一致するときだけトークンを埋め込む
       const i = html.indexOf('</head>');

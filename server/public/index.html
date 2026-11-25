@@ -274,7 +274,7 @@ function render(fromTick) {
     const hidden = all.length - shown.length;
     const kids = shown.map((a) => agentCard(s, a)).join('') + s.pending.map(ghostCard).join('');
     return `<section class="board ${s.status === 'ended' ? 'ended' : ''}" data-sid="${esc(s.id)}">
-      <div class="board-head"><span class="name">${esc(s.name)}</span><span class="cwd">${esc(s.cwd)}</span></div>
+      <div class="board-head"><span class="name">${esc(s.title || s.name)}</span><span class="cwd">${esc(s.cwd)}</span></div>
       <div class="stage"><svg class="wires"></svg>${orchCard(s)}
         ${kids ? `<div class="kids">${kids}</div>` : ''}
         ${hidden ? `<div class="older">前の指示で動いたエージェント ${hidden} 件を非表示中</div>` : ''}
@@ -314,7 +314,7 @@ function openDrawer(sid, aid, refresh) {
   const tgt = a || s;
   $('#dTitle').innerHTML = a
     ? `<span class="badge" style="--m:var(--${modelKey(a.model)})">${esc(modelLabel(a.model))}</span> <b>${esc(a.description || a.type)}</b>`
-    : `<span class="badge" style="--m:var(--orch)">統括</span> <b>${esc(s.name)}</b>`;
+    : `<span class="badge" style="--m:var(--orch)">統括</span> <b>${esc(s.title || s.name)}</b>`;
   const log = [...tgt.log].reverse().map((l) => `<li><span class="tm">${clock(l.t)}</span><span class="tl">${esc(l.tool)}</span><span class="sm">${esc(l.summary)}</span></li>`).join('');
   $('#dBody').innerHTML = `
     ${tgt.questions?.length ? `<h3>疑問・確認したいこと</h3><div class="qbox"><ul>${tgt.questions.map((q) => `<li>${esc(q)}</li>`).join('')}</ul></div>` : ''}

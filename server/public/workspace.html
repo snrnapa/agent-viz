@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Viz ワークスペース</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --sub: #5d6575; --line: #d9dde4;
+  --run: #1e88e5; --done: #2e9d5b; --q: #e53935; --wait: #f59e0b; --ask: #0097a7; --ask-ink: #fff;
+  --shadow: 0 1px 2px rgba(20,30,50,.06), 0 4px 14px rgba(20,30,50,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --panel: #1b2029; --ink: #e8ebf1; --sub: #9aa3b2; --line: #2d3440;
+    --run: #5aa9f0; --done: #4fc27f; --q: #ff6b66; --wait: #fbbf24; --ask: #4dd0e1; --ask-ink: #06282c;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --panel: #1b2029; --ink: #e8ebf1; --sub: #9aa3b2; --line: #2d3440;
+  --run: #5aa9f0; --done: #4fc27f; --q: #ff6b66; --wait: #fbbf24; --ask: #4dd0e1; --ask-ink: #06282c;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
+header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
+header .sp { flex: 1; }
+header a { color: var(--sub); font-size: 13px; }
+.conn { width: 9px; height: 9px; border-radius: 50%; background: var(--q); flex: none; }
+.conn.ok { background: var(--done); }
+.gate { padding: 80px 16px; text-align: center; color: var(--sub); }
+.app { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
+.side, .center { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.side { background: var(--panel); }
+.side.left { border-right: 1px solid var(--line); }
+.side.right { border-left: 1px solid var(--line); }
+.center { background: var(--bg); overflow: auto; }
+.sec-h { font-size: 12px; color: var(--sub); font-weight: 600; padding: 10px 12px 0; letter-spacing: .03em; }
+
+/* 左: 起動フォームと一覧 */
+.newform { display: grid; gap: 6px; padding: 10px 12px 12px; border-bottom: 1px solid var(--line); }
+.newform label { font-size: 12px; color: var(--sub); }
+.newform input, .newform select { font: inherit; font-size: 13px; width: 100%; min-width: 0; padding: 6px 8px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.newform .row2 { display: flex; gap: 8px; align-items: center; }
+.newform .row2 select { flex: 1; }
+.btn { font: inherit; font-weight: 600; min-height: 34px; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--ask); }
+.btn.primary { background: var(--ask); border-color: var(--ask); color: var(--ask-ink); }
+.btn.deny { color: var(--q); border-color: var(--q); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.sugg { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.sugg div { padding: 4px 8px; font-size: 12.5px; cursor: pointer; overflow-wrap: anywhere; }
+.sugg div:hover, .sugg div[aria-selected="true"] { background: color-mix(in srgb, var(--ask) 18%, transparent); }
+.sugg .sh { cursor: default; color: var(--sub); font-size: 11px; background: none !important; }
+.msg { font-size: 12px; color: var(--sub); min-height: 1em; overflow-wrap: anywhere; }
+.msg.err { color: var(--q); }
+.msg:empty { display: none; }
+.list { flex: 1; min-height: 0; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.empty-list { font-size: 12.5px; color: var(--sub); padding: 10px 6px; }
+.row { font: inherit; text-align: left; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-width: 0; width: 100%; }
+.row:hover { border-color: var(--ask); }
+.row[aria-pressed="true"] { border-color: var(--ask); box-shadow: inset 3px 0 0 var(--ask); }
+.row.asking { border-color: var(--ask); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ask) 22%, transparent); }
+.row.question { border-color: var(--q); }
+.row.ended { opacity: .55; }
+.row-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.row-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-sub { font-size: 11.5px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill { white-space: nowrap; flex: none; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px;
+  display: inline-flex; align-items: center; gap: 5px; }
+.pill.running { color: var(--run); background: color-mix(in srgb, var(--run) 12%, transparent); }
+.pill.done, .pill.idle { color: var(--done); background: color-mix(in srgb, var(--done) 12%, transparent); }
+.pill.question { color: var(--q); background: color-mix(in srgb, var(--q) 12%, transparent); }
+.pill.waiting { color: var(--wait); background: color-mix(in srgb, var(--wait) 15%, transparent); }
+.pill.ended { color: var(--sub); background: color-mix(in srgb, var(--sub) 12%, transparent); }
+.pill.asking { color: var(--ask); background: color-mix(in srgb, var(--ask) 16%, transparent); font-weight: 700; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pill.running .dot, .pill.waiting .dot, .pill.asking .dot { animation: blink 1s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+
+/* 中央: 端末 */
+.chead { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); min-width: 0; flex: none; }
+.chead .ttl { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chead .sub { color: var(--sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chead .btn { margin-left: auto; }
+.termwrap { position: relative; flex: 1 0 300px; background: var(--term-bg, #0e1116); min-height: 0; }
+.termbox { position: absolute; inset: 0; padding: 6px; }
+.cmsg { padding: 14px 16px; color: var(--sub); font-size: 13px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-wrap: anywhere; flex: none; }
+
+/* 右: プレビュー */
+details.preview { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+details.preview[open] { min-height: 0; }
+details.preview > summary { cursor: pointer; padding: 10px 12px; font-weight: 600; font-size: 13px; color: var(--sub); flex: none; }
+.flist { flex: none; max-height: 34%; overflow: auto; padding: 0 8px 8px; display: flex; flex-direction: column; gap: 4px; border-bottom: 1px solid var(--line); }
+.fbtn { font: inherit; text-align: left; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px 8px; cursor: pointer; display: flex; flex-direction: column; min-width: 0; }
+.fbtn[aria-pressed="true"] { border-color: var(--ask); box-shadow: inset 3px 0 0 var(--ask); }
+.fbtn .fn { font-weight: 600; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fbtn .fm { font-size: 11px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pvhead { font-size: 12px; color: var(--sub); padding: 6px 12px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none; }
+.pv { flex: 1 1 auto; min-height: 180px; overflow: auto; padding: 8px 12px 12px; }
+.pvmsg { font-size: 13px; color: var(--sub); padding: 8px 0; }
+.pv img { display: block; max-width: 100%; height: auto; }
+.pv pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px; font-size: 12.5px; line-height: 1.6; }
+
+:focus-visible { outline: 2px solid var(--ask); outline-offset: 2px; }
+
+@media (max-width: 900px) {
+  body { height: auto; min-height: 100vh; overflow: auto; }
+  header { padding: 10px 16px; }
+  .app { display: flex; flex-direction: column; flex: none; }
+  .side.left, .side.right { border: 0; border-bottom: 1px solid var(--line); }
+  .side.left .list { max-height: 40vh; flex: none; }
+  .center { overflow: visible; }
+  .termwrap { flex: none; height: 60vh; }
+  details.preview { flex: none; }
+  .pv { max-height: 60vh; min-height: 0; }
+  .flist { max-height: 30vh; }
+}
+</style>
+</head>
+<body>
+<header>
+  <span class="conn" id="conn" title="サーバー接続"></span>
+  <h1>ワークスペース</h1>
+  <span class="sp"></span>
+  <a id="boardLink" href="/">盤面のみ</a>
+</header>
+
+<div class="gate" id="gate" hidden>?key= を付けて開いてください</div>
+
+<div class="app" id="app" hidden>
+  <aside class="side left">
+    <form class="newform" id="newForm" autocomplete="off">
+      <div class="sec-h" style="padding:0">新しく起動</div>
+      <label for="cwdIn">ディレクトリ（Tab で補完）</label>
+      <input id="cwdIn" placeholder="~/project" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="cwdList">
+      <div class="sugg" id="cwdList" role="listbox" hidden></div>
+      <label for="mode">起動の種類</label>
+      <div class="row2">
+        <select id="mode"></select>
+        <button class="btn primary" type="submit" id="startBtn" disabled>起動</button>
+      </div>
+      <div class="msg" id="newMsg" role="status"></div>
+    </form>
+    <div class="msg" id="listMsg" role="status" style="padding:6px 12px 0"></div>
+    <div class="list" id="list" role="list"></div>
+  </aside>
+
+  <main class="center">
+    <div class="chead">
+      <span class="ttl" id="ttl"></span>
+      <span class="sub" id="sub"></span>
+      <button class="btn deny" type="button" id="killBtn" hidden>終了</button>
+    </div>
+    <div class="cmsg" id="termMsg" role="status" hidden></div>
+    <div class="termwrap" id="termWrap" hidden><div class="termbox" id="termBox"></div></div>
+  </main>
+
+  <aside class="side right">
+    <details class="preview" id="previewDetails" open>
+      <summary>プレビュー</summary>
+      <div class="flist" id="flist"></div>
+      <div class="pvhead" id="pvName"></div>
+      <div class="pv" id="pv"><div class="pvmsg">プレビューできるファイルはまだありません</div></div>
+    </details>
+  </aside>
+</div>
+
+<script src="/vendor/xterm.js"></script>
+<script src="/vendor/addon-fit.js"></script>
+<script>
+// ワークスペース画面。サーバー由来の文字列は必ず textContent / DOM API で入れる（innerHTML 禁止）。
+const $ = (s, r = document) => r.querySelector(s);
+const TOKEN = document.querySelector('meta[name="agent-viz-token"]')?.content || '';
+const KEY_PARAM = new URLSearchParams(location.search).get('key') || '';
+const enc = encodeURIComponent;
+const SLABEL = { running: '作業中', done: '完了', question: '疑問あり', idle: '待機中', waiting: 'あなたの確認待ち', ended: '終了' };
+const MODE_LABEL = { claude: 'claude', continue: 'claude --continue（前回の続き）', shell: 'シェル' };
+const LS = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
+let sessions = [];      // スナップショットの sessions
+let terms = [];         // GET /api/term の terms
+let modesLoaded = false;
+let termErr = '';
+let selKey = null;      // 't:<端末名>' または 's:<セッションID>'
+let curRow = null;      // 描画中の選択行
+let mount = null;       // 端末の接続（1つだけ）
+let previewSid = null;
+let previewPath = null;
+let userPicked = false; // 利用者が手でファイルを選んだか（セッションが変わると戻す）
+let shownKey = null;    // 表示中のプレビュー（sid|path|t）
+let loadSeq = 0;
+let termsOk = false;    // 端末の一覧を一度でも取得できたか
+
+function h(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'text') n.textContent = String(v);
+    else if (k[0] === '@') n.addEventListener(k.slice(1), v);
+    else if (k[0] === '.') n[k.slice(1)] = v;
+    else n.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c);
+  return n;
+}
+const toMs = (v) => (typeof v === 'number' ? v : Date.parse(v) || 0);
+const clock = (t) => new Date(toMs(t)).toTimeString().slice(0, 8);
+const baseName = (p) => String(p || '').split(/[\\/]/).pop() || String(p || '');
+const isImage = (p) => /\.(png|jpe?g|gif|webp|svg)$/i.test(p);
+
+// API 呼び出し。GET も POST もヘッダでトークンを送る
+async function api(path, body, method = 'POST') {
+  const headers = { 'x-agent-viz-token': TOKEN };
+  if (body) headers['content-type'] = 'application/json';
+  try {
+    const r = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    const json = r.headers.get('content-type')?.includes('json') ? await r.json().catch(() => null) : null;
+    return { ok: r.ok, status: r.status, json };
+  } catch { return { ok: false, status: 0, json: null }; }
+}
+const failText = (r) => (r.json?.error ? `${r.json.error}` : r.status ? `HTTP ${r.status}` : '通信に失敗しました');
+
+// 直列送信用の文字列 <-> base64（UTF-8）
+function strToB64(s) {
+  const bytes = new TextEncoder().encode(s);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// 同じ要素を、フォーカスを保ったまま差し替える（キーボード操作を途切れさせない）
+function replaceKeepFocus(container, items, attr) {
+  const active = document.activeElement;
+  const focusVal = active && container.contains(active) ? active.getAttribute(attr) : null;
+  container.replaceChildren(...items);
+  if (focusVal !== null) {
+    const el = [...container.children].find((x) => x.getAttribute(attr) === focusVal);
+    el?.focus({ preventScroll: true });
+  }
+}
+
+// ===== 行（端末とセッションを1行にまとめる）=====
+function buildRows() {
+  const names = new Set(terms.map((t) => t.name));
+  const latest = new Map(); // 端末名 -> そこに紐づく最新のセッション
+  for (const s of sessions) {
+    if (!s.term || !names.has(s.term)) continue;
+    const cur = latest.get(s.term);
+    if (!cur || toMs(s.updatedAt) > toMs(cur.updatedAt)) latest.set(s.term, s);
+  }
+  const rows = [];
+  for (const t of terms) {
+    const s = latest.get(t.name) || null;
+    rows.push(mkRow('t:' + t.name, s?.title || t.name, t.cwd, s, t));
+  }
+  for (const s of sessions) {
+    if (s.term && names.has(s.term)) continue; // 端末の行に含まれる（または古い方なので省く）
+    rows.push(mkRow('s:' + s.id, s.title || s.name || s.id?.slice(0, 8), s.cwd, s, null));
+  }
+  const prio = (r) => (r.asks ? 0 : r.status === 'question' || r.status === 'waiting' ? 1 : r.status === 'running' ? 2 : r.status === 'ended' ? 4 : 3);
+  rows.sort((a, b) => prio(a) - prio(b) || b.updated - a.updated);
+  return rows;
+}
+// 行の名前がセッション名のときは、tmux attach に使う端末名を小さい行に残す
+const termLabel = (r) => (r.t && r.name !== r.t.name ? r.t.name : '');
+function mkRow(key, name, cwd, s, t) {
+  return {
+    key, name: name || '', cwd: cwd || '', s, t,
+    status: s ? s.status : 'idle',
+    asks: s?.asks?.length || 0,
+    updated: s ? toMs(s.updatedAt) : toMs(t?.createdAt),
+  };
+}
+function rowEl(r) {
+  const pillCls = r.asks ? 'asking' : r.s ? r.status : 'idle';
+  const pillText = r.asks ? (r.asks > 1 ? `回答待ち ${r.asks}` : '回答待ち') : r.s ? (SLABEL[r.status] || r.status) : 'セッション待ち';
+  const sub = [termLabel(r), r.t ? r.t.command || '' : '画面外', r.cwd].filter(Boolean).join(' · ');
+  const cls = ['row', r.asks ? 'asking' : '', r.status === 'question' ? 'question' : '', r.status === 'ended' ? 'ended' : ''].filter(Boolean).join(' ');
+  return h('button', { type: 'button', class: cls, role: 'listitem', 'data-key': r.key, 'aria-pressed': r.key === selKey ? 'true' : 'false',
+    title: r.cwd, '@click': () => select(r.key) },
+    h('span', { class: 'row-top' }, h('span', { class: `pill ${pillCls}` }, h('span', { class: 'dot' }), h('span', { text: pillText }))),
+    h('span', { class: 'row-name', text: r.name || '(名前なし)' }),
+    h('span', { class: 'row-sub', text: sub }));
+}
+
+function renderList(rows) {
+  if (!rows.length) {
+    $('#list').replaceChildren(h('div', { class: 'empty-list', text: termsOk ? '端末もセッションもありません。上の「新しく起動」から始めてください' : '読み込み中…' }));
+    return;
+  }
+  replaceKeepFocus($('#list'), rows.map(rowEl), 'data-key');
+}
+
+function select(key) { selKey = key; renderAll(); }
+
+function renderAll() {
+  const rows = buildRows();
+  if (!rows.some((r) => r.key === selKey)) selKey = rows[0]?.key ?? null; // 選択が消えたら先頭を選ぶ
+  curRow = rows.find((r) => r.key === selKey) || null;
+  renderList(rows);
+  syncCenter();
+  renderPreview();
+}
+
+// ===== 端末 =====
+function setMsg(text) { const m = $('#termMsg'); m.textContent = text || ''; m.hidden = !text; }
+
+function syncCenter() {
+  const row = curRow;
+  const termName = row?.t ? row.t.name : null;
+  if (mount && mount.name !== termName) teardown();
+  if (termName && !mount) mountTerm(termName);
+
+  $('#ttl').textContent = row ? row.name : '';
+  $('#sub').textContent = row ? [termLabel(row), row.cwd].filter(Boolean).join(' · ') : '';
+  $('#killBtn').hidden = !termName;
+
+  if (!row) {
+    setMsg('左の一覧から選ぶか、「新しく起動」で始めてください');
+    $('#termWrap').hidden = true;
+  } else if (!termName) {
+    setMsg('このセッションは画面から起動していないため、端末は表示できません。分担は右上の「盤面のみ」で見られます');
+    $('#termWrap').hidden = true;
+  } else {
+    $('#termWrap').hidden = false;
+  }
+}
+
+function mountTerm(name) {
+  const box = $('#termBox');
+  const term = new Terminal({
+    cursorBlink: true, scrollback: 5000, fontSize: 13,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans Mono CJK JP", monospace',
+    // Claude Code の配色は暗い背景向けなので、画面のテーマに関係なく端末は暗くする
+    theme: { background: '#0e1116', foreground: '#e8ebf1' },
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  box.replaceChildren();
+  term.open(box);
+  try { fit.fit(); } catch {}
+
+  const m = { name, term, fit, es: null, viewId: null, buf: '', inflight: false, dead: false,
+    ro: null, timer: null, disp: null, lastCols: 0, lastRows: 0 };
+  mount = m;
+  setMsg('端末に接続しています…');
+
+  // 入力は onData をそのまま使う（IME を含め、キーイベントは横取りしない）
+  m.disp = term.onData((d) => { if (m.dead || mount !== m) return; m.buf += d; flush(m); });
+  m.ro = new ResizeObserver(() => { clearTimeout(m.timer); m.timer = setTimeout(() => resizeTerm(m, false), 150); });
+  m.ro.observe(box);
+
+  const es = new EventSource(`/api/term/stream?name=${enc(name)}&cols=${term.cols}&rows=${term.rows}&key=${enc(TOKEN)}`);
+  m.es = es;
+  es.addEventListener('attached', (e) => {
+    if (mount !== m) return;
+    try { m.viewId = JSON.parse(e.data).id; } catch { return; }
+    setMsg('');
+    flush(m);
+    resizeTerm(m, true);
+  });
+  es.onmessage = (e) => { if (mount === m) term.write(b64ToBytes(e.data)); };
+  es.addEventListener('exit', () => { if (mount === m) finish(m, '端末が終了しました'); });
+  es.onerror = () => {
+    if (mount !== m) return;
+    if (es.readyState === EventSource.CLOSED) finish(m, '端末に接続できませんでした');
+    else setMsg('接続が切れました。再接続しています…');
+  };
+}
+
+// 入力は直列に送る。送信中に来た分は、次の送信でまとめて送る（順序を保つ）
+function flush(m) {
+  if (m.inflight || !m.viewId || !m.buf || m.dead) return;
+  const data = m.buf;
+  m.buf = '';
+  m.inflight = true;
+  api('/api/term/input', { id: m.viewId, data: strToB64(data) }).then((r) => {
+    m.inflight = false;
+    if (mount !== m) return;
+    if (r.status === 404) { finish(m, '端末との接続が切れました'); return; }
+    flush(m);
+  });
+}
+
+function resizeTerm(m, force) {
+  if (mount !== m || m.dead) return;
+  try { m.fit.fit(); } catch { return; }
+  if (!m.viewId) return;
+  const { cols, rows } = m.term;
+  if (!force && cols === m.lastCols && rows === m.lastRows) return;
+  m.lastCols = cols;
+  m.lastRows = rows;
+  api('/api/term/resize', { id: m.viewId, cols, rows });
+}
+
+function finish(m, text) {
+  if (m.dead) return;
+  m.dead = true;
+  m.es?.close();
+  if (mount === m) setMsg(text);
+}
+
+function teardown() {
+  const m = mount;
+  if (!m) return;
+  mount = null; // 以後の非同期の結果は、すべて mount !== m で捨てられる
+  m.es?.close();
+  m.disp?.dispose();
+  m.ro?.disconnect();
+  clearTimeout(m.timer);
+  try { m.term.dispose(); } catch {}
+  $('#termBox').replaceChildren();
+}
+
+async function killTerm() {
+  const row = curRow;
+  if (!row?.t) return;
+  const name = row.t.name;
+  if (!confirm(`端末「${name}」を終了しますか？\n中で動いている Claude Code も止まります。`)) return;
+  const r = await api('/api/term/kill', { name });
+  if (!r.ok && r.status !== 404) { $('#listMsg').textContent = `終了できませんでした（${failText(r)}）`; return; }
+  teardown();
+  const s = sessions.find((x) => x.term === name);
+  selKey = s ? 's:' + s.id : null;
+  await refreshTerms();
+}
+
+$('#killBtn').addEventListener('click', killTerm);
+
+// ===== 端末の一覧（3 秒ごと）=====
+let termsBusy = false;
+async function refreshTerms() {
+  if (termsBusy) return;
+  termsBusy = true;
+  const r = await api('/api/term', null, 'GET');
+  termsBusy = false;
+  if (!r.ok || !r.json) {
+    termErr = `端末の一覧を取得できませんでした（${failText(r)}）`;
+    $('#listMsg').textContent = termErr;
+    $('#listMsg').classList.add('err');
+    return;
+  }
+  termErr = '';
+  termsOk = true;
+  $('#listMsg').textContent = r.json.available === false ? 'tmux が見つからないため、画面からの起動はできません' : '';
+  $('#listMsg').classList.toggle('err', r.json.available === false);
+  terms = Array.isArray(r.json.terms) ? r.json.terms : [];
+  if (!modesLoaded && Array.isArray(r.json.modes)) {
+    modesLoaded = true;
+    $('#mode').replaceChildren(...r.json.modes.map((m) => new Option(MODE_LABEL[m] || m, m)));
+    $('#mode').value = 'claude';
+    $('#startBtn').disabled = false;
+  }
+  renderAll();
+}
+
+// ===== 新しく起動 =====
+$('#newForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const cwd = $('#cwdIn').value.trim();
+  const mode = $('#mode').value;
+  const msg = $('#newMsg');
+  if (!cwd) { msg.classList.add('err'); msg.textContent = 'ディレクトリを入力してください'; return; }
+  const btn = $('#startBtn');
+  btn.disabled = true;
+  msg.classList.remove('err');
+  msg.textContent = '起動しています…';
+  const r = await api('/api/term/create', { cwd, mode });
+  btn.disabled = false;
+  if (!r.ok) {
+    msg.classList.add('err');
+    msg.textContent = `起動できませんでした（${failText(r)}）`;
+    return; // 入力値は残す
+  }
+  LS.set('agentviz.ws.cwd', cwd);
+  msg.textContent = '';
+  if (r.json?.name) selKey = 't:' + r.json.name;
+  await refreshTerms(); // 一覧に出てから選ぶ
+  if (r.json?.name && selKey !== 't:' + r.json.name) { selKey = 't:' + r.json.name; renderAll(); }
+});
+
+// ===== ディレクトリの補完 =====
+const cwdIn = $('#cwdIn');
+const sugg = $('#cwdList');
+let suggItems = [];
+let suggIdx = -1;
+let suggSeq = 0;
+let suggTimer = null;
+
+// 使ったことのあるディレクトリ（直近に起動したもの → 一覧にあるもの）
+function knownDirs() {
+  const all = [LS.get('agentviz.ws.cwd'), ...terms.map((t) => t.cwd), ...sessions.map((s) => s.cwd)];
+  return [...new Set(all.filter(Boolean))].slice(0, 8);
+}
+function closeSugg() {
+  suggSeq++;
+  clearTimeout(suggTimer);
+  suggItems = [];
+  suggIdx = -1;
+  sugg.hidden = true;
+  cwdIn.setAttribute('aria-expanded', 'false');
+}
+function showSugg(items, title) {
+  suggItems = items;
+  suggIdx = -1;
+  sugg.replaceChildren(...(title ? [h('div', { class: 'sh', text: title })] : []), ...items.map((d) => h('div', {
+    role: 'option', 'data-dir': d, text: d,
+    // mousedown で処理する（click だと先に blur して一覧が消える）
+    '@mousedown': (e) => { e.preventDefault(); pick(d); },
+  })));
+  sugg.hidden = !items.length;
+  cwdIn.setAttribute('aria-expanded', String(!!items.length));
+}
+function highlight(i) {
+  const opts = [...sugg.querySelectorAll('[role="option"]')];
+  if (!opts.length) return;
+  suggIdx = (i + opts.length) % opts.length;
+  opts.forEach((o, n) => o.setAttribute('aria-selected', String(n === suggIdx)));
+  opts[suggIdx].scrollIntoView({ block: 'nearest' });
+}
+function setDir(v) { cwdIn.value = v; cwdIn.setSelectionRange(v.length, v.length); cwdIn.scrollLeft = cwdIn.scrollWidth; }
+function pick(d) { setDir(d.endsWith('/') ? d : d + '/'); cwdIn.focus(); suggest(); }
+
+async function fetchDirs(prefix) {
+  const seq = ++suggSeq;
+  const r = await api('/api/term/dirs?prefix=' + enc(prefix), null, 'GET');
+  // 応答を待つ間に入力が変わったら捨てる
+  return seq === suggSeq && cwdIn.value === prefix && Array.isArray(r.json?.dirs) ? r.json.dirs : null;
+}
+async function suggest() {
+  if (!cwdIn.value) { showSugg(knownDirs(), '使ったことのある場所'); return; }
+  const dirs = await fetchDirs(cwdIn.value);
+  if (dirs) showSugg(dirs);
+}
+// Tab: シェルと同じく、候補が1つなら確定、複数なら共通部分まで伸ばして一覧を出す
+async function complete() {
+  if (suggIdx >= 0) { pick(suggItems[suggIdx]); return; }
+  const typed = cwdIn.value;
+  clearTimeout(suggTimer);
+  const dirs = await fetchDirs(typed);
+  if (!dirs) return;
+  if (dirs.length === 1) { pick(dirs[0]); return; }
+  let common = dirs[0] || '';
+  for (const d of dirs) while (!d.startsWith(common)) common = common.slice(0, -1);
+  if (common.length > typed.length) setDir(common);
+  showSugg(dirs);
+}
+cwdIn.addEventListener('input', () => { suggIdx = -1; suggSeq++; clearTimeout(suggTimer); suggTimer = setTimeout(suggest, 120); });
+cwdIn.addEventListener('focus', suggest);
+cwdIn.addEventListener('blur', closeSugg);
+cwdIn.addEventListener('keydown', (e) => {
+  if (e.isComposing) return; // 日本語変換中のキーは奪わない
+  if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); complete(); }
+  else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !sugg.hidden) {
+    e.preventDefault();
+    highlight(suggIdx < 0 && e.key === 'ArrowUp' ? -1 : suggIdx + (e.key === 'ArrowDown' ? 1 : -1));
+  } else if (e.key === 'Enter') {
+    if (suggIdx >= 0) { e.preventDefault(); pick(suggItems[suggIdx]); } else closeSugg();
+  } else if (e.key === 'Escape') closeSugg();
+});
+
+// ===== プレビュー =====
+function renderPreview() {
+  const s = curRow?.s || null;
+  const sid = s ? s.id : null;
+  if (sid !== previewSid) { previewSid = sid; previewPath = null; userPicked = false; }
+  const files = Array.isArray(s?.files) ? s.files : []; // 古い順
+  let cur = userPicked ? files.find((f) => f.path === previewPath) : null;
+  cur = cur || files[files.length - 1] || null; // 手で選んでいなければ最新
+  previewPath = cur ? cur.path : null;
+
+  const newest = [...files].reverse();
+  replaceKeepFocus($('#flist'), newest.map((f) => h('button', {
+    type: 'button', class: 'fbtn', 'data-key': f.path, 'aria-pressed': f.path === previewPath ? 'true' : 'false', title: f.path,
+    '@click': () => { userPicked = true; previewPath = f.path; renderPreview(); },
+  }, h('span', { class: 'fn', text: baseName(f.path) }), h('span', { class: 'fm', text: `${clock(f.t)} · ${f.tool || 'ファイル'}` }))), 'data-key');
+
+  const want = cur ? `${sid}|${cur.path}|${cur.t}` : null;
+  if (want === shownKey) return; // 変わっていなければ読み直さない
+  shownKey = want;
+  const seq = ++loadSeq;
+  const pv = $('#pv');
+  if (!cur) {
+    $('#pvName').textContent = '';
+    $('#pvName').title = '';
+    pv.replaceChildren(pvMsg('プレビューできるファイルはまだありません'));
+    return;
+  }
+  $('#pvName').textContent = baseName(cur.path);
+  $('#pvName').title = cur.path;
+  if (isImage(cur.path)) {
+    const src = `/api/file?session=${enc(sid)}&path=${enc(cur.path)}&key=${enc(TOKEN)}&v=${enc(String(cur.t))}`;
+    pv.replaceChildren(h('img', { src, alt: baseName(cur.path), '@error': () => {
+      if (seq === loadSeq) pv.replaceChildren(pvMsg('画像を読み込めませんでした'));
+    } }));
+    return;
+  }
+  pv.replaceChildren(pvMsg('読み込み中…'));
+  // テキスト（md/txt）は本文を textContent で入れる。ヘッダでトークンを送る
+  (async () => {
+    const r = await fetch(`/api/file?session=${enc(sid)}&path=${enc(cur.path)}`, { headers: { 'x-agent-viz-token': TOKEN } }).catch(() => null);
+    if (seq !== loadSeq) return;
+    const text = r && r.ok ? await r.text().catch(() => null) : null;
+    if (seq !== loadSeq) return;
+    pv.replaceChildren(text === null ? pvMsg('ファイルを読み込めませんでした') : h('pre', { text }));
+  })();
+}
+function pvMsg(text) { return h('div', { class: 'pvmsg', text }); }
+
+// ===== スナップショット（SSE）=====
+function connect() {
+  const es = new EventSource(`/stream?key=${enc(TOKEN)}`);
+  es.onopen = () => $('#conn').classList.add('ok');
+  es.onmessage = (m) => {
+    try { sessions = JSON.parse(m.data).sessions || []; } catch { return; }
+    renderAll();
+  };
+  es.onerror = () => $('#conn').classList.remove('ok');
+  // ページを離れるときは端末の接続も閉じる
+  addEventListener('pagehide', () => { teardown(); es.close(); });
+}
+
+// ===== 起動 =====
+if (!TOKEN) {
+  $('#gate').hidden = false;
+} else {
+  $('#app').hidden = false;
+  $('#boardLink').href = '/' + (KEY_PARAM ? `?key=${enc(KEY_PARAM)}` : '');
+  const saved = LS.get('agentviz.ws.cwd');
+  if (saved) $('#cwdIn').value = saved;
+  connect();
+  refreshTerms();
+  setInterval(refreshTerms, 3000);
+}
+</script>
+</body>
+</html>

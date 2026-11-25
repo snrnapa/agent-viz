@@ -53,6 +53,15 @@ function slim(ev) {
       160,
     );
   }
+  // ワークスペース画面から起動した端末との対応づけ
+  if (process.env.AGENT_VIZ_TERM) out.term = process.env.AGENT_VIZ_TERM;
+  // /rename などで付けたセッション名。SessionStart と UserPromptSubmit の入力にだけ含まれる
+  if (ev.session_title) out.title = clip(ev.session_title, 200);
+  // プレビュー欄に出せるファイル（画像・Markdown など）のパス。中身は送らない
+  const file = ti.file_path || ti.filename || ti.path;
+  if (typeof file === 'string' && /\.(png|jpe?g|gif|webp|svg|md|txt)$/i.test(file)) {
+    out.file = path.resolve(ev.cwd || '/', file);
+  }
   if (ev.prompt) out.prompt = clip(ev.prompt, 4000);
   if (ev.last_assistant_message) out.message = clip(ev.last_assistant_message, 6000);
   if (ev.message) out.notification = clip(ev.message, 500);

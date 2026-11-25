@@ -570,3 +570,30 @@ describe('サーバー: AGENT_VIZ_HOST=0.0.0.0 と AGENT_VIZ_ALLOWED_HOSTS で L
     assert.equal(hasMeta(page.body), false);
   });
 });
+
+describe('サーバー: セッション名', () => {
+  let srv;
+  before(async () => { srv = await startServer(); });
+  after(() => stopServer(srv));
+
+  const send = (extra) => postJson(srv.port, '/event', {
+    event: 'UserPromptSubmit', session_id: 'named', t: Date.now(), cwd: '/home/user/project', prompt: 'p', ...extra,
+  });
+  const current = async () => (await getState(srv.port)).sessions.find((s) => s.id === 'named');
+
+  it('title を保存し、フォルダ名の name は変えない。title の無いイベントでは消えず、改名で置き換わる', async () => {
+    await send({ title: '最初の名前' });
+    assert.equal((await current()).title, '最初の名前');
+    assert.equal((await current()).name, 'project');
+    await send({ event: 'PreToolUse', tool_name: 'Bash' });
+    assert.equal((await current()).title, '最初の名前');
+    await send({ title: '改名後' });
+    assert.equal((await current()).title, '改名後');
+  });
+
+  it('文字列でない title と空白だけの title は無視する', async () => {
+    await send({ title: '残る名前' });
+    for (const title of [123, { a: 1 }, '   ']) await send({ title });
+    assert.equal((await current()).title, '残る名前');
+  });
+});
