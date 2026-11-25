@@ -8,14 +8,14 @@
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --sub: #5d6575; --line: #d9dde4;
   --orch: #3b4252; --opus: #7c4dff; --sonnet: #1e88e5; --haiku: #2e9d5b; --fable: #ef6c00; --other: #78808f;
-  --run: #1e88e5; --done: #2e9d5b; --q: #e53935; --wait: #f59e0b;
+  --run: #1e88e5; --done: #2e9d5b; --q: #e53935; --wait: #f59e0b; --ask: #0097a7; --ask-ink: #fff;
   --shadow: 0 1px 2px rgba(20,30,50,.06), 0 4px 14px rgba(20,30,50,.06);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #12151b; --panel: #1b2029; --ink: #e8ebf1; --sub: #9aa3b2; --line: #2d3440;
     --orch: #7d8698; --opus: #a385ff; --sonnet: #5aa9f0; --haiku: #4fc27f; --fable: #ff9a4a; --other: #8d95a3;
-    --run: #5aa9f0; --done: #4fc27f; --q: #ff6b66; --wait: #fbbf24;
+    --run: #5aa9f0; --done: #4fc27f; --q: #ff6b66; --wait: #fbbf24; --ask: #4dd0e1; --ask-ink: #06282c;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
   }
 }
@@ -104,6 +104,58 @@ aside pre { white-space: pre-wrap; word-break: break-word; background: var(--bg)
 .log .tl { font-weight: 600; flex: none; }
 .log .sm { color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { main { padding: 12px 16px; } .card.agent { width: 100%; } .legend { display: none; } }
+
+/* 盤面からの回答（許可・質問・次の指示） */
+header .ans-state { font-size: 12px; color: var(--sub); }
+.topmsg { padding: 6px 20px; font-size: 12.5px; color: var(--wait); background: var(--panel); border-bottom: 1px solid var(--line); }
+.topmsg:empty { display: none; }
+.card.orch.asking { border-color: var(--ask); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ask) 22%, transparent), var(--shadow); }
+.card.orch:has(.ask):hover { transform: none; }
+.pill.asking-pill { color: var(--ask); background: color-mix(in srgb, var(--ask) 14%, transparent); }
+.ask { margin-top: 10px; padding: 10px 11px; border-radius: 10px; cursor: default; text-align: left; font-size: 13px;
+  border: 1px solid color-mix(in srgb, var(--ask) 55%, var(--line)); background: color-mix(in srgb, var(--ask) 7%, var(--panel)); }
+.ask [hidden] { display: none !important; }
+.ask-h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.ask-title { color: var(--ask); font-size: 13px; }
+.ask-left { margin-left: auto; font-size: 11.5px; color: var(--sub); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ask-tool { font-size: 12.5px; overflow-wrap: anywhere; }
+.ask-pre { margin: 6px 0 0; padding: 8px; max-height: 30vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.ask-sub { margin-top: 8px; font-size: 11.5px; color: var(--sub); }
+.ask-hint { font-size: 11.5px; color: var(--sub); }
+.ask-q { margin: 8px 0 0; padding: 0; border: 0; min-width: 0; }
+.ask-q + .ask-q { padding-top: 8px; border-top: 1px dashed var(--line); }
+.ask-qh { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; padding: 0; margin-bottom: 2px; }
+.chip { font-size: 11px; font-weight: 700; color: var(--ask); background: color-mix(in srgb, var(--ask) 16%, transparent); border-radius: 6px; padding: 0 7px; }
+.ask-qt { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.ask-opts { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.ask-opt { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); cursor: pointer; }
+.ask-opt input { margin: 0; width: 16px; height: 16px; accent-color: var(--ask); flex: none; }
+.ask-opt .ol { font-weight: 600; overflow-wrap: anywhere; }
+.ask-opt .od { flex-basis: 100%; padding-left: 24px; font-size: 11.5px; color: var(--sub); overflow-wrap: anywhere; }
+.ask-other, .ask-text { display: block; width: 100%; margin-top: 6px; padding: 7px 9px; font: inherit; font-size: 14px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.ask-text { min-height: 76px; resize: vertical; }
+.ask-sum { margin-bottom: 4px; }
+.ask-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ab-btn { font: inherit; font-weight: 600; min-height: 36px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink); cursor: pointer; }
+.ab-btn:hover:not(:disabled) { border-color: var(--ask); }
+.ab-btn.primary { background: var(--ask); border-color: var(--ask); color: var(--ask-ink); }
+.ab-btn.deny { color: var(--q); border-color: var(--q); }
+.ab-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ask-msg { margin-top: 8px; font-size: 12px; color: var(--sub); }
+.ask-msg:empty { margin-top: 0; }
+.ask-msg.err { color: var(--q); }
+.ctl { margin-top: 12px; padding-left: 4px; font-size: 12.5px; }
+.fu { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; }
+.fu input { margin: 0; width: 16px; height: 16px; accent-color: var(--ask); }
+.ctl-note { font-size: 11.5px; color: var(--sub); margin-top: 2px; }
+.ctl-msg { font-size: 12px; color: var(--q); margin-top: 4px; }
+.ctl-msg:empty { display: none; }
+.ask :focus-visible, .ctl :focus-visible, header :focus-visible { outline: 2px solid var(--ask); outline-offset: 2px; }
+@media (max-width: 640px) { header { flex-wrap: wrap; gap: 8px 12px; padding: 10px 16px; } .topmsg { padding: 6px 16px; } }
 </style>
 </head>
 <body>
@@ -117,8 +169,11 @@ aside pre { white-space: pre-wrap; word-break: break-word; background: var(--bg)
     <span><i style="background:var(--q)"></i>疑問あり</span>
   </div>
   <span class="sp"></span>
+  <label><input type="checkbox" id="answerEnabled"> 盤面で回答する</label>
+  <span class="ans-state" id="answerState"></span>
   <label><input type="checkbox" id="showOld"> 前の指示の分も表示</label>
 </header>
+<div class="topmsg" id="topMsg" role="status"></div>
 <main id="main"><div class="empty">Claude Code でセッションを始めると、ここに統括とサブエージェントが表示されます。</div></main>
 <aside id="drawer"><div class="ah"><span id="dTitle"></span><button id="dClose">閉じる</button></div><div class="ab" id="dBody"></div></aside>
 
@@ -188,18 +243,26 @@ function orchCard(s) {
   const kidsRunning = s.agents.some((a) => a.turn === s.turn && a.status === 'running');
   const pillCls = kidsRunning && st !== 'waiting' ? 'running' : s.questions?.length && st !== 'running' ? 'question' : st;
   const pillText = pillCls === 'question' ? '質問あり' : kidsRunning && st !== 'running' && st !== 'waiting' ? 'サブエージェント待ち' : STATUS[st];
-  return `<div class="orch-row"><div class="card orch ${pillCls === 'question' ? 'question' : ''}" data-sid="${esc(s.id)}" data-aid="" style="--m:var(--orch)">
+  const asks = s.asks || [];
+  const askCls = asks.length ? ' asking' : '';
+  const askPill = asks.length ? `<span class="pill asking-pill">回答待ち${asks.length > 1 ? ' ' + asks.length : ''}</span>` : '';
+  return `<div class="orch-row"><div class="card orch ${pillCls === 'question' ? 'question' : ''}${askCls}" data-sid="${esc(s.id)}" data-aid="" style="--m:var(--orch)">
     <span class="stripe"></span>${pillCls === 'question' ? '<span class="qmark">?</span>' : ''}
     <div class="top"><span class="badge">統括</span><span class="type">メインセッション</span>
-      <span class="pill ${pillCls}"><span class="dot"></span>${pillText}</span></div>
+      ${askPill}<span class="pill ${pillCls}"><span class="dot"></span>${pillText}</span></div>
     <div class="lbl">あなたの指示</div>
     <div class="role">${esc(s.prompt || '(まだ指示はありません)')}</div>
-    ${now}${notice}${rep}${qs}
+    ${now}${notice}<div class="ask-slot" data-sid="${esc(s.id)}"></div>${rep}${qs}
+    <div class="fu-slot" data-sid="${esc(s.id)}"></div>
   </div></div>`;
 }
 
 function render(fromTick) {
+  if (composing) { pendingRender = true; return; }
+  pendingRender = false;
+  askRefresh.clear();
   const main = $('#main');
+  const focus = captureFocus();
   if (!state.sessions.length) {
     main.innerHTML = '<div class="empty">Claude Code でセッションを始めると、ここに統括とサブエージェントが表示されます。</div>';
     return;
@@ -217,6 +280,8 @@ function render(fromTick) {
         ${hidden ? `<div class="older">前の指示で動いたエージェント ${hidden} 件を非表示中</div>` : ''}
       </div></section>`;
   }).join('');
+  fillSlots();
+  restoreFocus(focus);
   drawWires();
   if (selected && !fromTick) openDrawer(selected.sid, selected.aid, true);
 }
@@ -259,6 +324,7 @@ function openDrawer(sid, aid, refresh) {
   if (!refresh) $('#drawer').classList.add('open');
 }
 $('#main').addEventListener('click', (e) => {
+  if (e.target.closest('.ask, .ctl')) return; // 回答 UI の操作では詳細パネルを開かない
   const c = e.target.closest('.card[data-sid]');
   if (c) openDrawer(c.dataset.sid, c.dataset.aid || null);
 });
@@ -266,13 +332,342 @@ $('#dClose').onclick = () => { $('#drawer').classList.remove('open'); selected =
 window.addEventListener('resize', drawWires);
 setInterval(() => { if (state.sessions.some((s) => s.status === 'running')) render(true); }, 1000);
 
+// ===== 盤面からの回答（許可・質問・次の指示）=====
+// 注意: サーバー由来の文字列は必ず textContent / setAttribute / append で入れる（innerHTML 禁止）
+const OTHER = 'x'; // 「その他」の印。選択肢の番号は '0', '1', ...
+const TITLE = { permission: '許可のお願い', question: '統括からの質問', followup: '次の指示' };
+const NO_TOKEN_MSG = '回答するには、ターミナルで cat ~/.agent-viz/token-' + (location.port || '4777')
+  + ' を実行し、表示された値を URL に ?key=値 として付けて開き直してください';
+const TOKEN = document.querySelector('meta[name="agent-viz-token"]')?.content || '';
+const askDrafts = new Map();  // ask id -> 下書き（再描画をまたいで保持。ask が消えたら捨てる）
+const askInfo = new Map();    // ask id -> { s, a }
+const askRefresh = new Map(); // ask id -> 表示更新（残り時間・ボタンの有効/無効）
+const pending = new Map();    // 'answer' / 'fu:<sid>' -> 送信中の設定値（スナップショットに反映されるまで保持）
+const fuMsg = new Map();      // sid -> 待機スイッチのエラー表示
+let topErr = '';
+let skew = 0;                 // サーバー時刻 - ブラウザ時刻
+let composing = false;        // IME 変換中は再描画を保留する
+let pendingRender = false;
+
+function newId() {
+  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
+  const b = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) crypto.getRandomValues(b);
+  else for (let i = 0; i < 16; i++) b[i] = Math.random() * 256 | 0;
+  return [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+// タブごとの client id（sessionStorage。使えなければ読み込みごとに作る）
+const CLIENT = (() => {
+  try {
+    let c = sessionStorage.getItem('agentviz.client');
+    if (!c) { c = newId(); sessionStorage.setItem('agentviz.client', c); }
+    return c;
+  } catch { return newId(); }
+})();
+
+// DOM を組み立てる小さなヘルパー。attrs: text=textContent, @イベント名=listener, .prop=プロパティ, その他=属性
+function h(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'text') n.textContent = String(v);
+    else if (k[0] === '@') n.addEventListener(k.slice(1), v);
+    else if (k[0] === '.') n[k.slice(1)] = v;
+    else n.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) n.append(c);
+  return n;
+}
+function post(path, body) {
+  const headers = { 'content-type': 'application/json' };
+  if (TOKEN) headers['x-agent-viz-token'] = TOKEN;
+  return fetch(path, { method: 'POST', headers, body: JSON.stringify(body) });
+}
+// 戻り値 { ok, status }。通信失敗は status 0
+async function send(path, body) {
+  try { const r = await post(path, body); return { ok: r.ok, status: r.status }; }
+  catch { return { ok: false, status: 0 }; }
+}
+const failText = (r) => (r.status ? `（HTTP ${r.status}）` : '（通信に失敗しました）');
+const toMs = (v) => (typeof v === 'number' ? v : Date.parse(v));
+
+function draftFor(a) {
+  let d = askDrafts.get(a.id);
+  if (!d) { d = { text: '', qs: [], busy: false, done: false, msg: '', err: false }; askDrafts.set(a.id, d); }
+  const n = a.kind === 'question' && Array.isArray(a.payload?.questions) ? a.payload.questions.length : 0;
+  while (d.qs.length < n) d.qs.push({ picked: [], other: '' });
+  return d;
+}
+function qOk(qd) { return qd.picked.length > 0 && (!qd.picked.includes(OTHER) || qd.other.trim() !== ''); }
+function answersOf(qs, d) {
+  const out = {};
+  qs.forEach((q, qi) => {
+    const qd = d.qs[qi];
+    const vals = (Array.isArray(q.options) ? q.options : [])
+      .filter((_, oi) => qd.picked.includes(String(oi)))
+      .map((o) => String(o?.label ?? ''));
+    if (qd.picked.includes(OTHER)) vals.push(qd.other.trim());
+    out[String(q.question ?? '')] = vals.join(', ');
+  });
+  return out;
+}
+
+// スナップショット受信ごとに、回答の一覧・下書き・送信中の設定を整える
+function pruneState() {
+  askInfo.clear();
+  for (const s of state.sessions) for (const a of s.asks || []) askInfo.set(a.id, { s, a });
+  for (const id of [...askDrafts.keys()]) if (!askInfo.has(id)) askDrafts.delete(id);
+  if (pending.has('answer') && !!state.settings?.answerEnabled === pending.get('answer')) pending.delete('answer');
+  for (const k of [...pending.keys()]) {
+    if (!k.startsWith('fu:')) continue;
+    const s = state.sessions.find((x) => x.id === k.slice(3));
+    if (!s || !!s.followup === pending.get(k)) pending.delete(k);
+  }
+  for (const sid of [...fuMsg.keys()]) if (!state.sessions.some((x) => x.id === sid)) fuMsg.delete(sid);
+}
+
+// ヘッダーのスイッチ・注意文・タブのタイトル
+function syncHeader() {
+  const on = pending.has('answer') ? pending.get('answer') : !!state.settings?.answerEnabled;
+  const cb = $('#answerEnabled');
+  cb.checked = on;
+  cb.disabled = !TOKEN;
+  $('#answerState').textContent = !on ? 'オフ（端末で答えます）'
+    : state.settings?.watching ? '回答できる状態です' : '回答できる状態ではありません';
+  $('#topMsg').textContent = !TOKEN ? NO_TOKEN_MSG : topErr;
+  let n = 0;
+  for (const { a } of askInfo.values()) if (!askDrafts.get(a.id)?.done) n++;
+  document.title = (n ? `(${n}) ` : '') + 'Agent Viz';
+}
+
+function buildQuestion(a, d, q, qi) {
+  const qd = d.qs[qi];
+  const multi = !!q?.multiSelect;
+  const type = multi ? 'checkbox' : 'radio';
+  const name = `q-${a.id}-${qi}`;
+  const opts = Array.isArray(q?.options) ? q.options : [];
+  const pick = (value, key, label, desc) => h('label', { class: 'ask-opt' },
+    h('input', { type, name, value, 'data-ask-id': a.id, 'data-field': 'pick', 'data-q': qi,
+      'data-ask-key': `${a.id}|q${qi}|${key}`, '.checked': qd.picked.includes(value) }),
+    h('span', { class: 'ol', text: label }),
+    desc ? h('span', { class: 'od', text: desc }) : null);
+  const items = opts.map((o, oi) => pick(String(oi), `o${oi}`, String(o?.label ?? ''), o?.description ? String(o.description) : ''));
+  items.push(pick(OTHER, 'other', 'その他', ''));
+  items.push(h('input', { type: 'text', class: 'ask-other', maxlength: '2000', placeholder: '自由に入力', 'aria-label': 'その他の内容',
+    'data-ask-id': a.id, 'data-field': 'other', 'data-q': qi, 'data-ask-key': `${a.id}|q${qi}|text`,
+    '.value': qd.other, hidden: !qd.picked.includes(OTHER) }));
+  return h('fieldset', { class: 'ask-q' },
+    h('legend', { class: 'ask-qh' },
+      h('span', { class: 'chip', text: String(q?.header || `質問${qi + 1}`) }),
+      h('span', { class: 'ask-qt', text: String(q?.question ?? '') })),
+    multi ? h('div', { class: 'ask-hint', text: '複数選べます' }) : null,
+    h('div', { class: 'ask-opts' }, items));
+}
+
+// 1件の ask を DOM で組み立てる。下書き（d）は ask.id ごとに保持されるので、再描画後も値が残る
+function buildAsk(a) {
+  const d = draftFor(a);
+  const p = a.payload || {};
+  const exp = toMs(a.expiresAt);
+  const remain = () => (Number.isFinite(exp) ? exp - (Date.now() + skew) : Infinity);
+  const qs = a.kind === 'question' && Array.isArray(p.questions) ? p.questions : [];
+  const title = TITLE[a.kind] || '確認';
+  const left = h('span', { class: 'ask-left' });
+  const msg = h('div', { class: 'ask-msg', role: 'status' });
+  const btns = [];
+  const btn = (label, act, cls, fn) => {
+    const b = h('button', { type: 'button', class: 'ab-btn' + (cls ? ' ' + cls : ''), 'data-act': act,
+      'data-ask-key': `${a.id}|${act}`, '@click': fn }, label);
+    btns.push(b);
+    return b;
+  };
+  const canSend = () => {
+    if (a.kind === 'followup') return d.text.trim() !== '';
+    if (a.kind === 'question') return qs.length > 0 && qs.every((_, qi) => qOk(d.qs[qi]));
+    return true;
+  };
+  let body = [];
+  let acts = [];
+  if (a.kind === 'permission') {
+    body = [
+      h('div', { class: 'ask-tool' }, '実行しようとしているツール: ', h('b', { text: String(p.tool_name || '(不明)') })),
+      h('pre', { class: 'ask-pre', text: String(p.summary || '(内容なし)') }),
+      // 要約とは別に、実際のツール入力（全文）も必ず見せる。説明文だけを信じて許可しないため
+      p.input_preview ? h('div', { class: 'ask-sub', text: '入力の全文' }) : null,
+      p.input_preview ? h('pre', { class: 'ask-pre', text: String(p.input_preview) }) : null,
+    ];
+    acts = [
+      btn('許可', 'allow', 'primary', () => sendAnswer(a, { behavior: 'allow' })),
+      btn('拒否', 'deny', 'deny', () => sendAnswer(a, { behavior: 'deny' })),
+      btn('端末で判断', 'skip', '', () => sendAnswer(a, { skip: true }, '端末で続けてください')),
+    ];
+  } else if (a.kind === 'question') {
+    body = qs.length ? qs.map((q, qi) => buildQuestion(a, d, q, qi))
+      : [h('div', { class: 'ask-hint', text: '質問の内容がありません' })];
+    acts = [
+      btn('送信', 'send', 'primary', () => sendAnswer(a, { answers: answersOf(qs, d) })),
+      btn('端末で答える', 'skip', '', () => sendAnswer(a, { skip: true }, '端末で続けてください')),
+    ];
+  } else if (a.kind === 'followup') {
+    body = [
+      h('div', { class: 'ask-sum' },
+        h('div', { class: 'ask-hint', text: '統括の最後の返答' }),
+        h('pre', { class: 'ask-pre', text: p.last_message ? String(p.last_message) : '(なし)' })),
+      h('textarea', { class: 'ask-text', rows: '3', maxlength: '20000', placeholder: '次の指示を入力',
+        'aria-label': '次の指示', 'data-ask-id': a.id, 'data-field': 'text', 'data-ask-key': `${a.id}|text`, '.value': d.text }),
+    ];
+    acts = [
+      btn('送信', 'send', 'primary', () => sendAnswer(a, { text: d.text.trim() })),
+      btn('待機をやめる', 'skip', '', () => sendAnswer(a, { skip: true }, '端末で続けてください')),
+    ];
+  } else {
+    acts = [btn('端末で判断', 'skip', '', () => sendAnswer(a, { skip: true }, '端末で続けてください'))];
+  }
+
+  const root = h('div', { class: 'ask', tabindex: '-1', role: 'group', 'aria-label': title, 'data-ask-root': a.id },
+    h('div', { class: 'ask-h' }, h('b', { class: 'ask-title', text: title }), left),
+    body,
+    h('div', { class: 'ask-acts' }, acts),
+    msg);
+
+  const refresh = () => {
+    const ms = remain();
+    const blocked = d.busy || d.done || !TOKEN || ms <= 0;
+    left.textContent = ms <= 0 ? '時間切れ' : Number.isFinite(ms) ? `残り ${dur(ms)}` : '';
+    root.querySelectorAll('input, textarea').forEach((el) => { el.disabled = blocked; });
+    root.querySelectorAll('[data-field="other"]').forEach((el) => { el.hidden = !d.qs[Number(el.dataset.q)]?.picked.includes(OTHER); });
+    btns.forEach((b) => { b.disabled = blocked || (b.dataset.act === 'send' && !canSend()); });
+    msg.textContent = d.msg;
+    msg.classList.toggle('err', d.err);
+  };
+  refresh();
+  askRefresh.set(a.id, refresh);
+  return root;
+}
+
+// 待機スイッチ（セッションごと）
+function buildFollowup(s) {
+  const on = pending.has('fu:' + s.id) ? pending.get('fu:' + s.id) : !!s.followup;
+  return h('div', { class: 'ctl' },
+    h('label', { class: 'fu' },
+      h('input', { type: 'checkbox', '.checked': on, disabled: !TOKEN, 'data-fu': s.id, 'data-ask-key': `fu|${s.id}` }),
+      h('span', { text: '次の指示を待つ' })),
+    h('div', { class: 'ctl-note', text: 'オンの間、統括が止まるたびに最大10分、ここからの指示を待ちます' }),
+    h('div', { class: 'ctl-msg', role: 'status', text: fuMsg.get(s.id) || '' }));
+}
+
+async function sendAnswer(a, answer, doneMsg = '送信しました。盤面から消えるまでお待ちください') {
+  const d = draftFor(a);
+  if (d.busy || d.done || !TOKEN) return;
+  d.busy = true; d.err = false; d.msg = '';
+  render();
+  const r = await send('api/answer', { id: a.id, answer });
+  d.busy = false;
+  if (r.ok) { d.done = true; d.msg = doneMsg; }
+  else if (r.status === 404) { d.done = true; d.msg = '端末か別のタブで回答済みです'; }
+  else { d.err = true; d.msg = r.status ? `送信できませんでした（HTTP ${r.status}）` : '通信に失敗しました。もう一度お試しください'; }
+  render();
+}
+
+// 統括カードの placeholder に、DOM API で ask と待機スイッチを入れる
+function fillSlots() {
+  const main = $('#main');
+  main.querySelectorAll('.ask-slot').forEach((slot) => {
+    const s = state.sessions.find((x) => x.id === slot.dataset.sid);
+    for (const a of s?.asks || []) slot.append(buildAsk(a));
+  });
+  main.querySelectorAll('.fu-slot').forEach((slot) => {
+    const s = state.sessions.find((x) => x.id === slot.dataset.sid);
+    if (s) slot.append(buildFollowup(s));
+  });
+}
+
+// 再描画の前後で、入力中の要素のフォーカス・カーソル・スクロールを保つ
+function captureFocus() {
+  const el = document.activeElement;
+  if (!el || !el.dataset || !el.dataset.askKey || !$('#main').contains(el)) return null;
+  const text = el.tagName === 'TEXTAREA' || el.type === 'text';
+  return { key: el.dataset.askKey, s: text ? el.selectionStart : null, e: text ? el.selectionEnd : null, top: el.scrollTop };
+}
+function restoreFocus(f) {
+  if (!f) return;
+  const el = [...$('#main').querySelectorAll('[data-ask-key]')].find((x) => x.dataset.askKey === f.key);
+  if (!el) return;
+  if (el.disabled) { el.closest('[data-ask-root]')?.focus({ preventScroll: true }); return; }
+  el.focus({ preventScroll: true });
+  if (f.s !== null) { try { el.setSelectionRange(f.s, f.e); } catch {} el.scrollTop = f.top; }
+}
+
+// 入力イベント（下書きを更新し、ボタンの有効/無効だけを即時に直す。再描画はしない）
+$('#main').addEventListener('input', (e) => {
+  const t = e.target;
+  const id = t.dataset?.askId;
+  const d = id && askDrafts.get(id);
+  if (!d) return;
+  if (t.dataset.field === 'text') d.text = t.value;
+  else if (t.dataset.field === 'other') d.qs[Number(t.dataset.q)].other = t.value;
+  else return;
+  askRefresh.get(id)?.();
+});
+$('#main').addEventListener('change', async (e) => {
+  const t = e.target;
+  if (t.dataset?.fu) {
+    const sid = t.dataset.fu;
+    const key = 'fu:' + sid;
+    pending.set(key, t.checked);
+    fuMsg.delete(sid);
+    const r = await send('api/settings', { followup: { session_id: sid, enabled: t.checked } });
+    if (!r.ok) { pending.delete(key); fuMsg.set(sid, '待機の設定を変更できませんでした' + failText(r)); render(); }
+    return;
+  }
+  if (t.dataset?.askId && t.dataset.field === 'pick') {
+    const qd = askDrafts.get(t.dataset.askId)?.qs[Number(t.dataset.q)];
+    if (!qd) return;
+    if (t.type === 'checkbox') qd.picked = t.checked ? [...qd.picked, t.value] : qd.picked.filter((x) => x !== t.value);
+    else qd.picked = t.checked ? [t.value] : [];
+    askRefresh.get(t.dataset.askId)?.();
+  }
+});
+// IME 変換中は再描画しない（変換が途中で壊れるため）。終わったら保留分を描く
+$('#main').addEventListener('compositionstart', () => { composing = true; });
+$('#main').addEventListener('compositionend', () => { composing = false; if (pendingRender) render(); });
+$('#main').addEventListener('focusout', () => { if (composing) { composing = false; if (pendingRender) render(); } });
+
+$('#answerEnabled').addEventListener('change', async (e) => {
+  const v = e.target.checked;
+  const key = 'answer';
+  pending.set(key, v);
+  topErr = '';
+  const r = await send('api/settings', { answerEnabled: v });
+  if (!r.ok) { pending.delete(key); topErr = '回答の設定を変更できませんでした' + failText(r); }
+  syncHeader();
+});
+
+function sendPresence() {
+  if (!TOKEN) return;
+  send('api/presence', { client: CLIENT, visible: document.visibilityState === 'visible' });
+}
+
 function connect() {
-  const es = new EventSource('stream');
+  // トークンを持つ画面だけが、ask の中身（コマンドや質問文）を受け取れる
+  const es = new EventSource(TOKEN ? 'stream?key=' + encodeURIComponent(TOKEN) : 'stream');
   es.onopen = () => $('#conn').classList.add('ok');
-  es.onmessage = (m) => { state = JSON.parse(m.data); render(); };
+  es.onmessage = (m) => {
+    state = JSON.parse(m.data);
+    if (Number.isFinite(state.now)) skew = state.now - Date.now();
+    pruneState();
+    syncHeader();
+    render();
+  };
   es.onerror = () => { $('#conn').classList.remove('ok'); };
 }
 connect();
+syncHeader();
+sendPresence();
+setInterval(sendPresence, 10000);
+document.addEventListener('visibilitychange', sendPresence);
+// 残り時間とボタンの状態を毎秒更新（再描画はしない）
+setInterval(() => askRefresh.forEach((fn) => fn()), 1000);
 </script>
 </body>
 </html>
