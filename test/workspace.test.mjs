@@ -299,6 +299,41 @@ describe('ワークスペース: /api/file（プレビュー）', () => {
 });
 
 // ---------------------------------------------------------------------------
+describe('ワークスペース: プレビューに記録するのは作成・編集したファイルだけ', () => {
+  let srv;
+  before(async () => { srv = await startServer(); });
+  after(() => stopServer(srv));
+
+  const send = (sid, event, tool_name, file) => postJson(srv.port, '/event', {
+    event, session_id: sid, cwd: '/home/user/project', t: Date.now(), tool_name, file,
+  });
+  const filesOf = async (sid) => JSON.parse((await request(srv.port, { path: `/api/state?key=${srv.token}` })).body)
+    .sessions.find((s) => s.id === sid).files.map((f) => f.path);
+
+  it('Write・Edit・MultiEdit・NotebookEdit の完了は記録する', async () => {
+    for (const [i, tool] of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].entries()) {
+      await send('rec-edit', 'PostToolUse', tool, `/home/user/project/f${i}.md`);
+    }
+    assert.equal((await filesOf('rec-edit')).length, 4);
+  });
+
+  it('読んだだけ（Read など。古い hook が file を送ってきても）と、実行前（PreToolUse）は記録しない', async () => {
+    await registerSession(srv.port, 'rec-read', '/home/user/project');
+    for (const tool of ['Read', 'Grep', 'Glob', 'Bash', undefined]) await send('rec-read', 'PostToolUse', tool, '/home/user/project/read.md');
+    await send('rec-read', 'PreToolUse', 'Write', '/home/user/project/not-yet.md');
+    await send('rec-read', 'PreToolUse', 'Read', '/home/user/project/read.md');
+    assert.deepEqual(await filesOf('rec-read'), []);
+  });
+
+  it('記録済みのファイルを読んでも、一覧の順番と時刻は変わらない', async () => {
+    await send('rec-order', 'PostToolUse', 'Write', '/home/user/project/old.md');
+    await send('rec-order', 'PostToolUse', 'Write', '/home/user/project/new.md');
+    await send('rec-order', 'PostToolUse', 'Read', '/home/user/project/old.md');
+    assert.deepEqual(await filesOf('rec-order'), ['/home/user/project/old.md', '/home/user/project/new.md']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 describe('ワークスペース: 読み手への /api/state（AGENT_VIZ_STRICT_KEY=1）', () => {
   let srv;
   const term = 'av-0123abcd';
@@ -307,7 +342,7 @@ describe('ワークスペース: 読み手への /api/state（AGENT_VIZ_STRICT_K
     srv = await startServer({ env: { AGENT_VIZ_STRICT_KEY: '1' } });
     await registerSession(srv.port, sid, '/home/user/project');
     await postJson(srv.port, '/event', {
-      event: 'PreToolUse', session_id: sid, cwd: '/home/user/project', t: Date.now(), tool_name: 'Write', term, file: '/home/user/project/shot.png',
+      event: 'PostToolUse', session_id: sid, cwd: '/home/user/project', t: Date.now(), tool_name: 'Write', term, file: '/home/user/project/shot.png',
     });
   });
   after(() => stopServer(srv));

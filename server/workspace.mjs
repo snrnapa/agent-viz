@@ -24,6 +24,8 @@ const MAX_BODY = 256 * 1024;
 const MAX_VIEWERS = 8;
 
 const MAX_DIRS = 200;
+// ファイルを作成・編集するツール。古い版の hook は読んだだけのファイルも送るので、サーバー側でも絞る
+const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 
 export const expandHome = (p, home = os.homedir()) => (p === '~' || p.startsWith('~/') ? home + p.slice(1) : p);
 
@@ -50,13 +52,14 @@ export function listDirs(input, home = os.homedir()) {
 
 const previewType = (p) => PREVIEW_TYPES[path.extname(p).toLowerCase()];
 
-/** /event で受けた内容から、セッションに端末との対応と、プレビューできるファイルを記録する */
+/** /event で受けた内容から、セッションに端末との対応と、作成・編集したプレビューできるファイルを記録する */
 export function recordWorkspace(session, ev) {
   if (typeof ev.term === 'string' && NAME_RE.test(ev.term)) session.term = ev.term;
+  if (ev.event !== 'PostToolUse' || !EDIT_TOOLS.has(ev.tool_name)) return;
   const f = ev.file;
   if (typeof f !== 'string' || f.length > 4096 || !path.isAbsolute(f) || !previewType(f)) return;
   session.files = (session.files || []).filter((x) => x.path !== f);
-  session.files.push({ path: f, t: ev.t, tool: ev.tool_name || '' });
+  session.files.push({ path: f, t: ev.t, tool: ev.tool_name });
   if (session.files.length > MAX_FILES) session.files.splice(0, session.files.length - MAX_FILES);
 }
 

@@ -14,6 +14,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 
 const clip = (s, n) => (typeof s === 'string' && s.length > n ? s.slice(0, n) + '…' : s);
 
+// ファイルを作成・編集するツール。読んだだけのファイルはプレビューに出さない
+const EDIT_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
 // 送るデータを小さくする（ファイル内容や長い出力は送らない）
 function slim(ev) {
   const out = {
@@ -57,9 +60,10 @@ function slim(ev) {
   if (process.env.AGENT_VIZ_TERM) out.term = process.env.AGENT_VIZ_TERM;
   // /rename などで付けたセッション名。SessionStart と UserPromptSubmit の入力にだけ含まれる
   if (ev.session_title) out.title = clip(ev.session_title, 200);
-  // プレビュー欄に出せるファイル（画像・Markdown など）のパス。中身は送らない
+  // 作成・編集し終えた、プレビュー欄に出せるファイル（画像・Markdown など）のパス。中身は送らない
   const file = ti.file_path || ti.filename || ti.path;
-  if (typeof file === 'string' && /\.(png|jpe?g|gif|webp|svg|md|txt)$/i.test(file)) {
+  if (ev.hook_event_name === 'PostToolUse' && EDIT_TOOLS.has(ev.tool_name)
+    && typeof file === 'string' && /\.(png|jpe?g|gif|webp|svg|md|txt)$/i.test(file)) {
     out.file = path.resolve(ev.cwd || '/', file);
   }
   if (ev.prompt) out.prompt = clip(ev.prompt, 4000);

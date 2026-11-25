@@ -597,3 +597,49 @@ describe('サーバー: セッション名', () => {
     assert.equal((await current()).title, '残る名前');
   });
 });
+
+describe('サーバー: Claude Code 内部の SubagentStop（agent_type が空）', () => {
+  let srv;
+  before(async () => { srv = await startServer(); });
+  after(() => stopServer(srv));
+
+  const send = (ev) => postJson(srv.port, '/event', { t: Date.now(), cwd: '/home/user/project', ...ev });
+  const find = async (sid) => (await getState(srv.port)).sessions.find((s) => s.id === sid);
+
+  it('未知の agent_id で agent_type が空（または無い）Stop は無視する（カードを作らず、updatedAt も変えない）', async () => {
+    const sid = newSid();
+    await send({ event: 'Stop', session_id: sid, t: 1000 + Date.now() });
+    const before = await find(sid);
+    for (const extra of [{ agent_type: '' }, {}]) {
+      const r = await send({ event: 'SubagentStop', session_id: sid, agent_id: 'ghost-1', message: '次は何をしますか？', t: Date.now() + 60_000, ...extra });
+      assert.equal(r.status, 204);
+    }
+    const after_ = await find(sid);
+    assert.deepEqual(after_.agents, []);
+    assert.equal(after_.updatedAt, before.updatedAt);
+  });
+
+  it('知らないセッションの内部 Stop では、セッションも作らない', async () => {
+    const sid = newSid();
+    await send({ event: 'SubagentStop', session_id: sid, agent_id: 'ghost-2', agent_type: '' });
+    assert.equal(await find(sid), undefined);
+  });
+
+  it('agent_type のある未知の Stop（サーバー再起動をまたいだもの）は、今までどおりカードを作る', async () => {
+    const sid = newSid();
+    await send({ event: 'SubagentStop', session_id: sid, agent_id: 'real-1', agent_type: 'general-purpose', message: '完了しました' });
+    const s = await find(sid);
+    assert.equal(s.agents.length, 1);
+    assert.equal(s.agents[0].type, 'general-purpose');
+    assert.equal(s.agents[0].status, 'done');
+  });
+
+  it('既知の agent は、Stop の agent_type が空でも完了にする', async () => {
+    const sid = newSid();
+    await send({ event: 'SubagentStart', session_id: sid, agent_id: 'known-1', agent_type: 'implementer' });
+    await send({ event: 'SubagentStop', session_id: sid, agent_id: 'known-1', agent_type: '', message: '終わり' });
+    const s = await find(sid);
+    assert.equal(s.agents[0].status, 'done');
+    assert.equal(s.agents[0].message, '終わり');
+  });
+});

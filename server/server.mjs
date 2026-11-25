@@ -129,6 +129,9 @@ const RECORD = process.env.AGENT_VIZ_RECORD; // デバッグ用: 受け取った
 function handle(ev) {
   if (!ev || !ev.session_id || !ev.event) return;
   if (RECORD) { try { fs.appendFileSync(RECORD, JSON.stringify(ev) + '\n'); } catch {} }
+  // Claude Code の内部処理は、SubagentStart の無い agent_type 空の SubagentStop を送る。身に覚えのないカードになるので無視する。
+  // agent_type のある未知の Stop（サーバー再起動をまたいだもの）は、下でカードを作る
+  if (ev.event === 'SubagentStop' && !ev.agent_type && !sessions.get(ev.session_id)?.agents[ev.agent_id]) return;
   const s = getSession(ev);
   recordWorkspace(s, ev);
   // 名前の無いイベントも届くので、あるときだけ置き換える

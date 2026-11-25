@@ -73,6 +73,25 @@ describe('bin/hook.mjs: ワークスペース用の file と term の転送', ()
     assert.equal('file' in none.json, false);
   });
 
+  it('作成・編集のツール（Write・Edit・MultiEdit・NotebookEdit）の完了時は file を送る', async () => {
+    for (const tool_name of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']) {
+      const ev = await run({ ...base, tool_name, tool_input: { file_path: 'a.md' } });
+      assert.equal(ev.json.file, '/home/user/proj/a.md', tool_name);
+    }
+  });
+
+  it('読んだだけのツール（Read・Grep・Glob など）は file を送らない', async () => {
+    for (const tool_name of ['Read', 'Grep', 'Glob', 'Bash', 'toString']) {
+      const ev = await run({ ...base, tool_name, tool_input: { file_path: 'a.md', path: 'docs/b.md' } });
+      assert.equal('file' in ev.json, false, tool_name);
+    }
+  });
+
+  it('実行前（PreToolUse）は、まだ作られていない（拒否されるかもしれない）ので file を送らない', async () => {
+    const ev = await run({ ...base, hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: 'a.md' } });
+    assert.equal('file' in ev.json, false);
+  });
+
   it('ファイルの中身（content など）は送らない', async () => {
     const ev = await run({ ...base, tool_name: 'Write', tool_input: { file_path: 'a.md', content: SECRET } });
     assert.equal(ev.raw.includes(SECRET), false);
