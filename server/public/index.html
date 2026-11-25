@@ -122,6 +122,7 @@ header .ans-state { font-size: 12px; color: var(--sub); }
 .ask-pre { margin: 6px 0 0; padding: 8px; max-height: 30vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; color: var(--ink);
   background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.ask-sub { margin-top: 8px; font-size: 11.5px; color: var(--sub); }
 .ask-hint { font-size: 11.5px; color: var(--sub); }
 .ask-q { margin: 8px 0 0; padding: 0; border: 0; min-width: 0; }
 .ask-q + .ask-q { padding-top: 8px; border-top: 1px dashed var(--line); }
@@ -490,7 +491,10 @@ function buildAsk(a) {
   if (a.kind === 'permission') {
     body = [
       h('div', { class: 'ask-tool' }, '実行しようとしているツール: ', h('b', { text: String(p.tool_name || '(不明)') })),
-      h('pre', { class: 'ask-pre', text: String(p.summary || p.input_preview || '(内容なし)') }),
+      h('pre', { class: 'ask-pre', text: String(p.summary || '(内容なし)') }),
+      // 要約とは別に、実際のツール入力（全文）も必ず見せる。説明文だけを信じて許可しないため
+      p.input_preview ? h('div', { class: 'ask-sub', text: '入力の全文' }) : null,
+      p.input_preview ? h('pre', { class: 'ask-pre', text: String(p.input_preview) }) : null,
     ];
     acts = [
       btn('許可', 'allow', 'primary', () => sendAnswer(a, { behavior: 'allow' })),
@@ -645,7 +649,8 @@ function sendPresence() {
 }
 
 function connect() {
-  const es = new EventSource('stream');
+  // トークンを持つ画面だけが、ask の中身（コマンドや質問文）を受け取れる
+  const es = new EventSource(TOKEN ? 'stream?key=' + encodeURIComponent(TOKEN) : 'stream');
   es.onopen = () => $('#conn').classList.add('ok');
   es.onmessage = (m) => {
     state = JSON.parse(m.data);

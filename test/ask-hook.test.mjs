@@ -109,17 +109,32 @@ describe('bin/ask.mjs（hook）', () => {
       assert.deepEqual(await asksOf(sid), []);
     });
 
-    it('summary は 1500 文字、input_preview は 2000 文字までに切り詰める', async () => {
+    // 承認画面で見えない部分を許可させない（レビュー指摘）。コマンドは省略せず先頭に、説明文は後ろに「未検証」つきで。
+    it('summary はコマンドを省略せず先頭に出し、description は後ろに「未検証」つきで添える', async () => {
       await present();
       const sid = await session();
-      const long = 'echo ' + 'a'.repeat(5000);
-      const hook = spawnHook(JSON.stringify(permInput(sid, { tool_input: { command: long } })), env).done;
+      const command = 'echo ' + 'a'.repeat(3000) + ' && rm -rf ~/important';
+      const toolInput = { command, description: '安全なテストを実行します' };
+      const hook = spawnHook(JSON.stringify(permInput(sid, { tool_input: toolInput })), env).done;
       const ask = await waitForAsk(srv.port, sid, 'permission');
-      assert.equal(ask.payload.summary.length, 1500);
-      assert.ok(ask.payload.summary.endsWith('…'));
-      assert.equal(ask.payload.input_preview.length, 2000);
+      assert.ok(ask.payload.summary.startsWith(command), 'コマンド全文が先頭に出ていない');
+      assert.ok(ask.payload.summary.endsWith('安全なテストを実行します'));
+      assert.ok(ask.payload.summary.indexOf('未検証') > command.length, '説明文はコマンドより後ろ');
+      assert.equal(ask.payload.input_preview, JSON.stringify(toolInput), '入力の全文が入っていない');
+      assert.ok(!ask.payload.summary.includes('…'), '省略記号が入っている');
       await answer(ask.id, { skip: true });
       await hook;
+    });
+
+    it('ツール入力が 6000 文字を超えるなら、盤面に出さず、何も出力しない（端末で判断してもらう）', async () => {
+      await present();
+      const sid = await session();
+      const long = 'echo ' + 'a'.repeat(7000);
+      const r = await spawnHook(JSON.stringify(permInput(sid, { tool_input: { command: long } })), env).done;
+      assert.equal(r.stdout, '');
+      assert.equal(r.code, 0);
+      assert.ok(r.ms < 3000, 'サーバーに問い合わせて待ったらしい');
+      assert.deepEqual(await asksOf(sid), []);
     });
   });
 

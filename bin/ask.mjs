@@ -18,13 +18,18 @@ function waitMs(envName, defaultSec) {
 const clip = (s, n) => (typeof s === 'string' && s.length > n ? s.slice(0, n - 1) + '…' : s);
 const str = (v) => (v === undefined || v === null ? '' : String(v));
 
-// 許可ダイアログに出す要約（ツール入力の主要な項目）
+// 盤面で許可できるツール入力の上限（JSON にした長さ）。超えたら端末で判断してもらう。
+// 切り詰めて見せると、見えない部分を許可することになるため。
+const INPUT_MAX = 6000;
+
+// 許可ダイアログに出す要約。判断に効く引数（コマンド・パスなど）を先頭に、省略せずに出す。
+// description はモデルが書いた説明で、実際の動作とは限らないので、あとに「未検証」と添える。
 function permissionSummary(tool, ti) {
-  const parts = [];
-  if (ti.description) parts.push(str(ti.description));
   const main = ti.command ?? ti.file_path ?? ti.url ?? ti.pattern ?? ti.query ?? ti.path;
-  if (main !== undefined) parts.push(str(main));
-  return clip(parts.join('\n') || str(tool), 1500);
+  const parts = [];
+  if (main !== undefined && main !== null) parts.push(typeof main === 'string' ? main : JSON.stringify(main));
+  if (ti.description) parts.push(`（Claude の説明・未検証）${str(ti.description)}`);
+  return parts.join('\n\n') || str(tool);
 }
 
 // AskUserQuestion の質問を盤面用に整える。質問文は回答の key になるので上限を 2000（サーバーの key 上限と揃える）
@@ -55,12 +60,13 @@ function plan(ev) {
       // 質問ツールの許可は PreToolUse(AskUserQuestion) で扱うので対象外
       if (ev.tool_name === 'AskUserQuestion') return null;
       const input = JSON.stringify(ti) ?? '{}';
+      if (input.length > INPUT_MAX) return null; // 全文を見せられないものは、盤面で許可させない
       return {
         kind: 'permission',
         payload: {
           tool_name: str(ev.tool_name),
           summary: permissionSummary(ev.tool_name, ti),
-          input_preview: clip(input, 2000),
+          input_preview: input,
         },
         wait: waitMs('AGENT_VIZ_WAIT_PERMISSION_SEC', 120),
       };

@@ -1,6 +1,7 @@
 // server/server.mjs の結合テスト。実際にサーバーを子プロセスで起動し、HTTP で確かめる。
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import {
   getState, lanIPv4, openAsk, postJson, registerSession, request, setPresence, startServer, stopServer, waitFor, waitForAsk,
 } from './helpers.mjs';
@@ -433,6 +434,48 @@ describe('サーバー: AGENT_VIZ_STRICT_KEY=1（複数ユーザーのマシン�
   it('strict でも、API は token ヘッダで普通に使える', async () => {
     const r = await setPresence(srv.port, srv.token, true, CLIENT);
     assert.equal(r.status, 204);
+  });
+
+  // ask の中身（コマンドや質問文）は、トークンを持たない読み手には見せない（レビュー指摘）。
+  it('トークンの無い読み手（/api/state・/stream）には ask の中身を出さず、トークン（ヘッダ・?key=）があれば出す', async () => {
+    const firstSseMessage = (urlPath) => new Promise((resolve, reject) => {
+      const req = http.get({ host: '127.0.0.1', port: srv.port, path: urlPath }, (res) => {
+        let buf = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { buf += c; if (buf.includes('\n\n')) { req.destroy(); resolve(buf); } });
+      });
+      req.on('error', (e) => { if (e.code !== 'ECONNRESET') reject(e); });
+      setTimeout(() => { req.destroy(); reject(new Error('SSE の最初の1通が届かない')); }, 5000).unref();
+    });
+    const stateOf = async (qs = '', headers = {}) => JSON.parse((await request(srv.port, { path: `/api/state${qs}`, headers })).body);
+    const sid = `strict-redact-${Date.now()}`;
+    await registerSession(srv.port, sid);
+    await setPresence(srv.port, srv.token, true, CLIENT);
+    const secret = 'cat ~/.ssh/id_rsa  # SECRET-MARKER';
+    const ask = openAsk(srv.port, {
+      kind: 'permission', session_id: sid, wait_ms: 8000,
+      payload: { tool_name: 'Bash', summary: secret, input_preview: JSON.stringify({ command: secret }) },
+    }, { token: srv.token });
+    try {
+      const withKey = await waitFor(async () => {
+        const s = (await stateOf(`?key=${srv.token}`)).sessions.find((x) => x.id === sid);
+        return s?.asks.length ? s : null;
+      });
+      assert.ok(withKey, '?key= 付きなら ask が見える');
+      assert.equal((await stateOf('', { 'x-agent-viz-token': srv.token })).sessions.find((x) => x.id === sid).asks.length, 1);
+
+      const anon = await request(srv.port, { path: '/api/state' });
+      assert.equal(anon.status, 200, '表示そのものは今までどおり読める');
+      assert.ok(!anon.body.includes('SECRET-MARKER'), 'ask の中身が漏れている');
+      assert.deepEqual(JSON.parse(anon.body).sessions.find((x) => x.id === sid).asks, []);
+      const wrong = await request(srv.port, { path: `/api/state?key=${'d'.repeat(48)}` });
+      assert.ok(!wrong.body.includes('SECRET-MARKER'), '間違ったキーでも漏れている');
+
+      assert.ok(!(await firstSseMessage('/stream')).includes('SECRET-MARKER'), '/stream（トークン無し）で漏れている');
+      assert.ok((await firstSseMessage(`/stream?key=${srv.token}`)).includes('SECRET-MARKER'), '/stream（?key=）で見えない');
+    } finally {
+      ask.abort();
+    }
   });
 });
 

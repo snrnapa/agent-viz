@@ -126,21 +126,41 @@ export function checkRequest(req, { allowed, token, needToken }) {
  * 同じマシンの別ユーザーが 127.0.0.1 に接続してトークンを受け取るのを防ぐために使う。
  * 調べられなければ null。
  */
-export function peerUid(clientPort, serverPort) {
-  if (process.platform !== 'linux' || !Number.isInteger(clientPort) || !Number.isInteger(serverPort)) return null;
+export function peerUid({ remoteAddress, remotePort, localAddress, localPort } = {}) {
+  if (process.platform !== 'linux' || !Number.isInteger(remotePort) || !Number.isInteger(localPort)) return null;
+  // 接続の4つ組（クライアントのアドレス:ポート → サーバーのアドレス:ポート）を、アドレスまで含めて照合する。
+  // ポートだけで照合すると、別のアドレス・別のアドレス族の接続（例: ::1 と 127.0.0.1）と取り違える。
+  const clientAddrs = procAddrForms(remoteAddress);
+  const serverAddrs = procAddrForms(localAddress);
+  if (!clientAddrs.length || !serverAddrs.length) return null;
+  const hex4 = (n) => n.toString(16).toUpperCase().padStart(4, '0');
+  const wantLocal = new Set(clientAddrs.map((a) => `${a}:${hex4(remotePort)}`));
+  const wantRemote = new Set(serverAddrs.map((a) => `${a}:${hex4(localPort)}`));
   for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
     let text;
     try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
     for (const line of text.split('\n').slice(1)) {
       const c = line.trim().split(/\s+/);
-      if (c.length < 8) continue;
-      // c[1] = 自分側 "アドレス:ポート"、c[2] = 相手側、c[7] = ソケット所有者の UID
-      const lport = parseInt(c[1].split(':')[1], 16);
-      const rport = parseInt(c[2].split(':')[1], 16);
-      if (lport === clientPort && rport === serverPort) return Number(c[7]);
+      // c[1] = 自分側 "アドレス:ポート"、c[2] = 相手側、c[3] = 状態（01 = ESTABLISHED）、c[7] = ソケット所有者の UID
+      if (c.length < 8 || c[3] !== '01') continue;
+      if (wantLocal.has(c[1].toUpperCase()) && wantRemote.has(c[2].toUpperCase())) return Number(c[7]);
     }
   }
   return null;
+}
+
+// アドレスを /proc/net/tcp{,6} の16進表記に直す（IPv4 はリトルエンディアン8桁、IPv6 は32桁）。
+// IPv4 と IPv4 射影（::ffff:a.b.c.d）は同じ接続でも別のテーブルに載るので両方返す。扱えなければ空配列。
+function procAddrForms(addr) {
+  const m = /^(?:::ffff:)?(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(String(addr || ''));
+  if (m) {
+    const octets = m[1].split('.').map(Number);
+    if (octets.some((n) => n > 255)) return [];
+    const v4 = octets.reverse().map((n) => n.toString(16).padStart(2, '0')).join('').toUpperCase();
+    return [v4, `0000000000000000FFFF0000${v4}`];
+  }
+  if (addr === '::1') return ['00000000000000000000000001000000'];
+  return [];
 }
 
 /**
@@ -150,12 +170,13 @@ export function peerUid(clientPort, serverPort) {
  * - ループバックからで、かつ接続元が自分と同じ UID（Linux で確認できたとき）なら可。
  *   確認できない環境（macOS など）は、trustLoopback（AGENT_VIZ_TRUST_LOOPBACK=1）のときだけ可。
  */
-export function mayReceiveToken(req, url, token, { strict = false, trustLoopback = false, serverPort } = {}) {
+export function mayReceiveToken(req, url, token, { strict = false, trustLoopback = false } = {}) {
   if (tokensEqual(url.searchParams.get('key'), token)) return true;
   if (strict) return false;
-  if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
+  const s = req.socket;
+  if (!isLoopbackAddress(s.remoteAddress)) return false;
   if (trustLoopback) return true;
   if (!isPosix) return false;
-  const uid = peerUid(req.socket.remotePort, serverPort);
+  const uid = peerUid({ remoteAddress: s.remoteAddress, remotePort: s.remotePort, localAddress: s.localAddress, localPort: s.localPort });
   return uid !== null && uid === process.getuid();
 }

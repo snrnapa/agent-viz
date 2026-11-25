@@ -4,7 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { allowedHosts, checkRequest, loadOrCreateToken, mayReceiveToken } from './auth.mjs';
+import { allowedHosts, checkRequest, loadOrCreateToken, mayReceiveToken, tokensEqual } from './auth.mjs';
 import { AskStore, KINDS } from './asks.mjs';
 
 const PORT = Number(process.env.AGENT_VIZ_PORT || 4777);
@@ -231,7 +231,8 @@ function handle(ev) {
   scheduleBroadcast();
 }
 
-function snapshot() {
+// redact=true のとき、ask の中身（コマンド・質問文など）は含めない（トークンを持たない読み手向け）
+function snapshot(redact = false) {
   const now = Date.now();
   for (const [id, s] of sessions) {
     if (now - s.updatedAt > SESSION_TTL_MS) {
@@ -250,7 +251,7 @@ function snapshot() {
         pending: pending.filter((p) => !p.claimed).map((p) => p.call),
         agents: Object.values(rest.agents).sort((x, y) => x.startedAt - y.startedAt),
         followup: asks.isFollowup(rest.id),
-        asks: asks.listFor(rest.id),
+        asks: redact ? [] : asks.listFor(rest.id),
       })),
   };
 }
@@ -260,9 +261,20 @@ function scheduleBroadcast() {
   if (timer) return;
   timer = setTimeout(() => {
     timer = null;
-    const data = `data: ${JSON.stringify(snapshot())}\n\n`;
-    for (const res of clients) res.write(data);
+    // 読み手ごとに、ask の中身を含むか（トークンを持つ画面）含まないかを切り替える
+    let full = null;
+    let redacted = null;
+    for (const res of clients) {
+      if (res.agentVizTrusted) res.write(full ??= `data: ${JSON.stringify(snapshot(false))}\n\n`);
+      else res.write(redacted ??= `data: ${JSON.stringify(snapshot(true))}\n\n`);
+    }
   }, 80);
+}
+
+// ask の中身を読んでよい相手か。トークン（ヘッダ・?key=）を持つか、ページにトークンを渡せる相手と同じ条件
+function readerTrusted(req, url) {
+  if (tokensEqual(req.headers['x-agent-viz-token'], TOKEN)) return true;
+  return mayReceiveToken(req, url, TOKEN, { strict: STRICT_KEY, trustLoopback: TRUST_LOOPBACK });
 }
 
 // トークンが要る（書き込み系）エンドポイント
@@ -418,14 +430,15 @@ const server = http.createServer((req, res) => {
       'cache-control': 'no-cache',
       connection: 'keep-alive',
     });
-    res.write(`data: ${JSON.stringify(snapshot())}\n\n`);
+    res.agentVizTrusted = readerTrusted(req, url);
+    res.write(`data: ${JSON.stringify(snapshot(!res.agentVizTrusted))}\n\n`);
     clients.add(res);
     const ping = setInterval(() => res.write(': ping\n\n'), 20000);
     req.on('close', () => { clients.delete(res); clearInterval(ping); });
     return;
   }
   if (url.pathname === '/api/state') {
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(snapshot()));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(snapshot(!readerTrusted(req, url))));
     return;
   }
   if (req.method === 'POST' && url.pathname === '/api/clear') {
@@ -441,7 +454,7 @@ const server = http.createServer((req, res) => {
       let out = html;
       // ループバックからの接続、または ?key= が一致するときだけトークンを埋め込む
       const i = html.indexOf('</head>');
-      if (i >= 0 && mayReceiveToken(req, url, TOKEN, { strict: STRICT_KEY, trustLoopback: TRUST_LOOPBACK, serverPort: PORT })) {
+      if (i >= 0 && mayReceiveToken(req, url, TOKEN, { strict: STRICT_KEY, trustLoopback: TRUST_LOOPBACK })) {
         out = `${html.slice(0, i)}<meta name="agent-viz-token" content="${TOKEN}">${html.slice(i)}`;
       }
       res.writeHead(200, {

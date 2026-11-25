@@ -219,6 +219,8 @@ describe('peerUid（Linux の /proc/net/tcp で接続元の UID を確認）', {
   let server;
   let port;
   const sockets = [];
+  // クライアントのソケットから、サーバー側から見た4つ組（remote = クライアント、local = サーバー）を作る
+  const tuple = (c) => ({ remoteAddress: c.localAddress, remotePort: c.localPort, localAddress: c.remoteAddress, localPort: c.remotePort });
 
   before(async () => {
     server = net.createServer((s) => sockets.push(s));
@@ -234,19 +236,54 @@ describe('peerUid（Linux の /proc/net/tcp で接続元の UID を確認）', {
     const client = net.connect(port, '127.0.0.1');
     sockets.push(client);
     await new Promise((r) => client.once('connect', r));
-    assert.equal(auth.peerUid(client.localPort, port), process.getuid());
+    assert.equal(auth.peerUid(tuple(client)), process.getuid());
   });
 
   it('ループバック接続の実物を渡すと、mayReceiveToken が true になる', async () => {
     const client = net.connect(port, '127.0.0.1');
     sockets.push(client);
     await new Promise((r) => client.once('connect', r));
-    const req = { socket: { remoteAddress: '127.0.0.1', remotePort: client.localPort } };
-    assert.equal(auth.mayReceiveToken(req, new URL('http://localhost/'), TOKEN, { serverPort: port }), true);
+    // サーバー側から見たソケット（remote = クライアント、local = サーバー）と同じ形にする
+    const req = { socket: { remoteAddress: '127.0.0.1', remotePort: client.localPort, localAddress: '127.0.0.1', localPort: port } };
+    assert.equal(auth.mayReceiveToken(req, new URL('http://localhost/'), TOKEN), true);
   });
 
   it('対応する接続が無い、または引数が整数でなければ null', () => {
-    assert.equal(auth.peerUid(1, 2), null);
-    assert.equal(auth.peerUid('x', port), null);
+    assert.equal(auth.peerUid({ remoteAddress: '127.0.0.1', remotePort: 1, localAddress: '127.0.0.1', localPort: 2 }), null);
+    assert.equal(auth.peerUid({ remoteAddress: '127.0.0.1', remotePort: 'x', localAddress: '127.0.0.1', localPort: port }), null);
+    assert.equal(auth.peerUid(), null);
+  });
+
+  // ポート番号だけで照合すると、アドレスの違う別の接続を自分の接続と取り違える（レビュー指摘）。
+  it('ポートが同じでも、アドレスが違えば null（4つ組で照合する）', async () => {
+    const client = net.connect(port, '127.0.0.1');
+    sockets.push(client);
+    await new Promise((r) => client.once('connect', r));
+    const t = tuple(client);
+    assert.equal(auth.peerUid(t), process.getuid(), '前提: 本物の4つ組なら取れる');
+    // クライアント側のアドレスだけ別の（ループバックの）アドレス・別のアドレス族にする
+    assert.equal(auth.peerUid({ ...t, remoteAddress: '127.0.0.2' }), null);
+    assert.equal(auth.peerUid({ ...t, remoteAddress: '::1' }), null);
+    // サーバー側のアドレスだけ違う場合も取れない
+    assert.equal(auth.peerUid({ ...t, localAddress: '127.0.0.2' }), null);
+    assert.equal(auth.peerUid({ ...t, localAddress: '::1' }), null);
+    // 不正なアドレス
+    assert.equal(auth.peerUid({ ...t, remoteAddress: '999.0.0.1' }), null);
+    assert.equal(auth.peerUid({ ...t, remoteAddress: 'localhost' }), null);
+  });
+
+  it('接続が閉じられたあと（ESTABLISHED でない）は null', async () => {
+    const client = net.connect(port, '127.0.0.1');
+    sockets.push(client);
+    await new Promise((r) => client.once('connect', r));
+    const t = tuple(client);
+    client.destroy();
+    // 閉じた直後は TIME_WAIT / FIN_WAIT などになり、ESTABLISHED では無くなる
+    let uid = auth.peerUid(t);
+    for (let i = 0; i < 50 && uid !== null; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      uid = auth.peerUid(t);
+    }
+    assert.equal(uid, null);
   });
 });

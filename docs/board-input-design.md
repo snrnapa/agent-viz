@@ -63,7 +63,9 @@ Claude Code ──hook(待つ)──▶ bin/ask.mjs ──POST /api/ask (長時�
   3. UID を確認できない環境（macOS・Windows）では、`AGENT_VIZ_TRUST_LOOPBACK=1` のときだけ、ループバックからの接続に渡す。未設定なら 1 だけが有効（`?key=` が必要）。
   - `AGENT_VIZ_STRICT_KEY=1` のときは 1 だけを有効にする。
 - `0.0.0.0` で待ち受けても、トークンは上の条件を満たす人にしか渡らない。
-- 既知の限界: 回答の権限は守るが、盤面の表示（`/stream`、`/api/state`）は今までどおり、同じマシンの他のユーザーからも読める。複数ユーザーのマシンでは注意。
+- 読み手の区別: `/stream` と `/api/state` は、ask の中身（コマンド・質問文など）を **トークンを持つ読み手にだけ**返す（`readerTrusted`）。トークンを持つとは、`x-agent-viz-token` ヘッダ、または `?key=` が一致する、またはページにトークンを渡せる相手（上の 1〜3）と同じ条件を満たすこと。持たない読み手には `asks: []` にしたスナップショットを返す。ページは、トークンがあれば `stream?key=<token>` で接続する。
+- 既知の限界: 回答の権限と ask の中身は守るが、それ以外の盤面の表示（依頼文・報告・進捗）は今までどおり、同じマシンの他のユーザーからも読める。複数ユーザーのマシンでは注意。`/event` は互換のためトークン不要のまま（偽のイベントで表示を乱せるが、回答の権限は持たない。ask を取り下げられても、端末の従来の動作に戻るだけ）。
+- `peerUid` はクライアントのアドレス:ポートとサーバーのアドレス:ポートの 4 つ組と、接続状態（ESTABLISHED）で照合する。ポートだけで照合すると、別のアドレス族の他人の接続（`::1` と `127.0.0.1` など）と取り違える。
 - ページは `x-frame-options: DENY` と `content-security-policy: frame-ancestors 'none'` を返し、他サイトに埋め込まれてボタンを誤クリックさせられるのを防ぐ。
 - 他サイトのリンクから開く場合（`GET` で `sec-fetch-mode: navigate`・`sec-fetch-dest: document`）は、`sec-fetch-site: cross-site` でも許可する（結果は相手のページから読めない）。fetch の cross-site は拒否。
 - `AGENT_VIZ_HOST` が `0.0.0.0` / `::` 以外のときは、`HOST:PORT` も許可する Host に自動で加える（`hook.mjs` が送る Host を通すため）。
@@ -86,7 +88,7 @@ Claude Code ──hook(待つ)──▶ bin/ask.mjs ──POST /api/ask (長時�
 
 `payload`（hook が作る。クリップ済み）:
 
-- `permission`: `{ tool_name, summary, input_preview }`（`summary` は最大1500文字、`input_preview` は `JSON.stringify(tool_input)` の最大2000文字）
+- `permission`: `{ tool_name, summary, input_preview }`。`input_preview` は `JSON.stringify(tool_input)` の**全文**。`summary` は判断に効く引数（コマンド・パス・URL など）を先頭に省略せず入れ、`description` は「（Claude の説明・未検証）」を添えて後ろに置く。**入力が 6000 文字を超えるときは ask を出さず、何も出力しない**（切り詰めると見えない部分を許可することになるため。端末で判断してもらう）。UI は要約と入力の全文の両方を表示する。
 - `question`: `{ questions: [{ question, header, multiSelect, options: [{ label, description }] }] }`
 - `followup`: `{ last_message }`（最大1000文字）
 
