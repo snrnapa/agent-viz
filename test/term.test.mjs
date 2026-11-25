@@ -113,6 +113,12 @@ describe('createTerminals: create の入力検証（tmux を呼ぶ前に弾く�
     await assert.rejects(term.create({ cwd: undefined, mode: 'shell' }), /cwd must be/);
   });
 
+  // 実在しないパスで確かめる（tmux は起動しない）
+  it('cwd に「#」があれば拒否する（tmux が -c の値を書式として解釈するため）', async () => {
+    await assert.rejects(term.create({ cwd: path.join(dir, 'a#b'), mode: 'shell' }), /「#」/);
+    await assert.rejects(term.create({ cwd: '/#', mode: 'shell' }), /「#」/);
+  });
+
   it('attach の名前が形式に合わなければ例外', () => {
     assert.throws(() => term.attach('../evil', { cols: 80, rows: 24, onData() {} }), /invalid name/);
   });

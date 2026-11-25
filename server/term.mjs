@@ -76,6 +76,10 @@ export function createTerminals({ port, socket = `agent-viz-${port}` }) {
 
   async function create({ cwd, mode = 'claude' }) {
     if (!Object.hasOwn(MODES, mode)) throw new Error('invalid mode');
+    // tmux は -c の値を書式（#...）として展開するので、「#」を含むパスは tmux に渡さない
+    if (typeof cwd === 'string' && cwd.includes('#')) {
+      throw new Error('パスに「#」を含むディレクトリでは起動できません（tmux が書式として解釈するため）');
+    }
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd) || !fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory()) {
       throw new Error('cwd must be an existing absolute directory');
     }
