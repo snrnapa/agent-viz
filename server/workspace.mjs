@@ -1,4 +1,4 @@
-// ワークスペース画面の API（端末の操作・ファイルのプレビュー・画面用ライブラリの配信）。
+// ワークスペース画面の API（端末の操作・ファイルのプレビュー・画面用スクリプトとライブラリの配信）。
 // 端末はマシンを自由に操作できるので、ループバックからの接続で、かつトークンそのものを持つ場合だけ許可する。
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -9,10 +9,13 @@ import { isLoopbackAddress, tokensEqual } from './auth.mjs';
 import { createTerminals, NAME_RE, MODES } from './term.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const VENDOR = {
-  '/vendor/xterm.js': ['xterm.js', 'text/javascript; charset=utf-8'],
-  '/vendor/xterm.css': ['xterm.css', 'text/css; charset=utf-8'],
-  '/vendor/addon-fit.js': ['addon-fit.js', 'text/javascript; charset=utf-8'],
+// 画面が読み込むファイル（server/public 配下）。ここに無いパスは配らない
+const JS = 'text/javascript; charset=utf-8';
+const ASSETS = {
+  '/vendor/xterm.js': ['vendor/xterm.js', JS],
+  '/vendor/xterm.css': ['vendor/xterm.css', 'text/css; charset=utf-8'],
+  '/vendor/addon-fit.js': ['vendor/addon-fit.js', JS],
+  '/rows.js': ['rows.js', JS],
 };
 export const PREVIEW_TYPES = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp',
@@ -170,9 +173,9 @@ export function createWorkspace({ port, token, sessions, enabled = true }) {
 
   /** このモジュールの担当なら処理して true。Host / Origin の検証は呼び出し側で済んでいる前提。 */
   function handle(req, res, url) {
-    if (req.method === 'GET' && Object.hasOwn(VENDOR, url.pathname)) {
-      const [name, type] = VENDOR[url.pathname];
-      fs.readFile(path.join(here, 'public', 'vendor', name), (err, buf) => {
+    if (req.method === 'GET' && Object.hasOwn(ASSETS, url.pathname)) {
+      const [name, type] = ASSETS[url.pathname];
+      fs.readFile(path.join(here, 'public', name), (err, buf) => {
         if (err) return res.writeHead(404).end();
         res.writeHead(200, { 'content-type': type, 'x-content-type-options': 'nosniff' }).end(buf);
       });

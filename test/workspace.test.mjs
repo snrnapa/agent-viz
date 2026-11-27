@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { request, postJson, openAsk, setPresence, startServer, stopServer, waitFor, registerSession } from './helpers.mjs';
+import { request, postJson, openAsk, setPresence, startServer, stopServer, waitFor, registerSession, ROOT } from './helpers.mjs';
 
 const hasTmux = spawnSync('tmux', ['-V']).status === 0;
 const tmpDir = (prefix) => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -383,6 +383,26 @@ describe('ワークスペース: 静的な配信とヘッダ', () => {
     assert.equal((await request(srv.port, { path: '/vendor/README.txt' })).status, 404);
     assert.equal((await request(srv.port, { path: '/vendor/nope.js' })).status, 404);
     assert.equal((await request(srv.port, { path: '/vendor/..%2fserver.mjs' })).status, 404);
+  });
+
+  const PAGE_SCRIPTS = ['rows.js'];
+
+  it('画面用のスクリプトは配る。public の他のファイルは名指しでは読めない', async () => {
+    for (const name of PAGE_SCRIPTS) {
+      const r = await request(srv.port, { path: `/${name}` });
+      assert.equal(r.status, 200, name);
+      assert.match(r.headers['content-type'], /javascript/);
+      assert.equal(r.headers['x-content-type-options'], 'nosniff');
+      assert.equal(r.body, fs.readFileSync(path.join(ROOT, 'server', 'public', name), 'utf8'));
+    }
+    for (const p of ['/workspace.html', '/vendor/rows.js', '/public/rows.js', '/server.mjs', '/..%2fserver.mjs', '/toString']) {
+      assert.equal((await request(srv.port, { path: p })).status, 404, p);
+    }
+  });
+
+  it('/workspace は、そのスクリプトを読み込む', async () => {
+    const r = await request(srv.port, { path: '/workspace' });
+    for (const name of PAGE_SCRIPTS) assert.ok(r.body.includes(`<script src="/${name}"></script>`), name);
   });
 
   it('/workspace は iframe に埋め込めない（frame-ancestors none / DENY）', async () => {

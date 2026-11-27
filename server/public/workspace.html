@@ -9,18 +9,21 @@
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --sub: #5d6575; --line: #d9dde4;
   --run: #1e88e5; --done: #2e9d5b; --q: #e53935; --wait: #f59e0b; --ask: #0097a7; --ask-ink: #fff;
+  --ai: #6d4bd1; --ai-ink: #fff; --sh-bg: #232a36; --sh-ink: #b7f0ac;
   --shadow: 0 1px 2px rgba(20,30,50,.06), 0 4px 14px rgba(20,30,50,.06);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #12151b; --panel: #1b2029; --ink: #e8ebf1; --sub: #9aa3b2; --line: #2d3440;
     --run: #5aa9f0; --done: #4fc27f; --q: #ff6b66; --wait: #fbbf24; --ask: #4dd0e1; --ask-ink: #06282c;
+    --ai: #a78bfa; --ai-ink: #1c1233; --sh-bg: #05070a; --sh-ink: #9be28f;
     --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
   }
 }
 :root[data-theme="dark"] {
   --bg: #12151b; --panel: #1b2029; --ink: #e8ebf1; --sub: #9aa3b2; --line: #2d3440;
   --run: #5aa9f0; --done: #4fc27f; --q: #ff6b66; --wait: #fbbf24; --ask: #4dd0e1; --ask-ink: #06282c;
+  --ai: #a78bfa; --ai-ink: #1c1233; --sh-bg: #05070a; --sh-ink: #9be28f;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
 }
 * { box-sizing: border-box; }
@@ -75,13 +78,31 @@ header a { color: var(--sub); font-size: 13px; }
 .row-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .row-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-sub { font-size: 11.5px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pill { white-space: nowrap; flex: none; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px;
+.row-li { display: flex; min-width: 0; }
+/* ディレクトリごとのまとまり */
+.grp, .grp-rows { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.grp + .grp { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 2px; }
+.grp-h { margin: 0; padding: 0 4px; display: flex; flex-direction: column; min-width: 0; font: inherit; }
+.grp-top { display: flex; align-items: baseline; gap: 2px; min-width: 0; }
+.grp-name, .grp-hint, .grp-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.grp-name { font-size: 14.5px; font-weight: 700; flex: 0 1 auto; }
+.grp-hint { font-size: 12px; color: var(--sub); flex: 0 2 auto; }
+.grp-path { font-size: 11px; color: var(--sub); }
+/* 行の種類（状態のピルと紛れないよう、角張った別の形にする） */
+.kind { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 18px; padding: 0 4px;
+  border-radius: 4px; border: 1px solid transparent; font-size: 11px; font-weight: 800; line-height: 1; }
+.kind.claude { background: var(--ai); color: var(--ai-ink); }
+.kind.shell { background: var(--sh-bg); color: var(--sh-ink); border-color: var(--sub); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#ckind { display: inline-flex; flex: none; }
+#ckind:empty { display: none; }
+#ckind .kind.off { opacity: .55; }
+.pill {white-space: nowrap; flex: none; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px;
   display: inline-flex; align-items: center; gap: 5px; }
 .pill.running { color: var(--run); background: color-mix(in srgb, var(--run) 12%, transparent); }
 .pill.done, .pill.idle { color: var(--done); background: color-mix(in srgb, var(--done) 12%, transparent); }
 .pill.question { color: var(--q); background: color-mix(in srgb, var(--q) 12%, transparent); }
 .pill.waiting { color: var(--wait); background: color-mix(in srgb, var(--wait) 15%, transparent); }
-.pill.ended { color: var(--sub); background: color-mix(in srgb, var(--sub) 12%, transparent); }
+.pill.ended, .pill.shell { color: var(--sub); background: color-mix(in srgb, var(--sub) 12%, transparent); }
 .pill.asking { color: var(--ask); background: color-mix(in srgb, var(--ask) 16%, transparent); font-weight: 700; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .pill.running .dot, .pill.waiting .dot, .pill.asking .dot { animation: blink 1s ease-in-out infinite; }
@@ -159,6 +180,7 @@ details.preview > summary { cursor: pointer; padding: 10px 12px; font-weight: 60
 
   <main class="center">
     <div class="chead">
+      <span id="ckind"></span>
       <span class="ttl" id="ttl"></span>
       <span class="sub" id="sub"></span>
       <button class="btn deny" type="button" id="killBtn" hidden>終了</button>
@@ -179,13 +201,25 @@ details.preview > summary { cursor: pointer; padding: 10px 12px; font-weight: 60
 
 <script src="/vendor/xterm.js"></script>
 <script src="/vendor/addon-fit.js"></script>
+<script src="/rows.js"></script>
 <script>
 // ワークスペース画面。サーバー由来の文字列は必ず textContent / DOM API で入れる（innerHTML 禁止）。
 const $ = (s, r = document) => r.querySelector(s);
 const TOKEN = document.querySelector('meta[name="agent-viz-token"]')?.content || '';
 const KEY_PARAM = new URLSearchParams(location.search).get('key') || '';
 const enc = encodeURIComponent;
-const SLABEL = { running: '作業中', done: '完了', question: '疑問あり', idle: '待機中', waiting: 'あなたの確認待ち', ended: '終了' };
+const KIND = { claude: { mark: 'AI', label: 'Claude' }, shell: { mark: '$', label: 'シェル' } };
+// このページはサーバーが読み直すたびに新しくなるが、起動中の古いサーバーは新しいスクリプトを配らない。
+// /rows.js が無いときは、種類マークとグループ分けの無い一覧にする
+const R = globalThis.AgentVizRows || {
+  rowKind: () => '',
+  rowStatus: (t, s) => s?.status || 'idle',
+  rowPill: ({ s, asks, status }) => (asks ? { cls: 'asking', text: '回答待ち' }
+    : { cls: status, text: s ? status : 'セッション待ち' }),
+  isEnded: ({ t, s }) => !t && s?.status === 'ended',
+  compareRows: (a, b) => b.asks - a.asks || b.updated - a.updated,
+  groupRows: null,
+};
 const MODE_LABEL = { claude: 'claude', continue: 'claude --continue（前回の続き）', shell: 'シェル' };
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -249,13 +283,15 @@ function b64ToBytes(b64) {
   return out;
 }
 
-// 同じ要素を、フォーカスを保ったまま差し替える（キーボード操作を途切れさせない）
+// 同じ要素を、フォーカスとスクロール位置を保ったまま差し替える（キーボード操作を途切れさせない）
 function replaceKeepFocus(container, items, attr) {
   const active = document.activeElement;
   const focusVal = active && container.contains(active) ? active.getAttribute(attr) : null;
+  const { scrollTop } = container;
   container.replaceChildren(...items);
+  container.scrollTop = scrollTop;
   if (focusVal !== null) {
-    const el = [...container.children].find((x) => x.getAttribute(attr) === focusVal);
+    const el = [...container.querySelectorAll(`[${attr}]`)].find((x) => x.getAttribute(attr) === focusVal);
     el?.focus({ preventScroll: true });
   }
 }
@@ -278,8 +314,7 @@ function buildRows() {
     if (s.term && names.has(s.term)) continue; // 端末の行に含まれる（または古い方なので省く）
     rows.push(mkRow('s:' + s.id, s.title || s.name || s.id?.slice(0, 8), s.cwd, s, null));
   }
-  const prio = (r) => (r.asks ? 0 : r.status === 'question' || r.status === 'waiting' ? 1 : r.status === 'running' ? 2 : r.status === 'ended' ? 4 : 3);
-  rows.sort((a, b) => prio(a) - prio(b) || b.updated - a.updated);
+  rows.sort(R.compareRows);
   return rows;
 }
 // 行の名前がセッション名のときは、tmux attach に使う端末名を小さい行に残す
@@ -287,21 +322,39 @@ const termLabel = (r) => (r.t && r.name !== r.t.name ? r.t.name : '');
 function mkRow(key, name, cwd, s, t) {
   return {
     key, name: name || '', cwd: cwd || '', s, t,
-    status: s ? s.status : 'idle',
+    kind: R.rowKind(t, s),
+    status: R.rowStatus(t, s),
     asks: s?.asks?.length || 0,
     updated: s ? toMs(s.updatedAt) : toMs(t?.createdAt),
   };
 }
-function rowEl(r) {
-  const pillCls = r.asks ? 'asking' : r.s ? r.status : 'idle';
-  const pillText = r.asks ? (r.asks > 1 ? `回答待ち ${r.asks}` : '回答待ち') : r.s ? (SLABEL[r.status] || r.status) : 'セッション待ち';
-  const sub = [termLabel(r), r.t ? r.t.command || '' : '画面外', r.cwd].filter(Boolean).join(' · ');
-  const cls = ['row', r.asks ? 'asking' : '', r.status === 'question' ? 'question' : '', r.status === 'ended' ? 'ended' : ''].filter(Boolean).join(' ');
-  return h('button', { type: 'button', class: cls, role: 'listitem', 'data-key': r.key, 'aria-pressed': r.key === selKey ? 'true' : 'false',
+// 行の種類（今動いているのが Claude かシェルか）。色だけに頼らず、文字と title / aria-label でも示す
+function kindMark(r) {
+  const k = KIND[r.kind];
+  if (!k) return null;
+  return h('span', { class: `kind ${r.kind}${R.isEnded(r) ? ' off' : ''}`, role: 'img', title: k.label, 'aria-label': k.label, text: k.mark });
+}
+// cwd はグループの見出しに出すので、行には出さない（グループ分けできないときだけ出す）
+function rowEl(r, worktree) {
+  const pill = R.rowPill(r);
+  const sub = [termLabel(r), r.t ? r.t.command || '' : '画面外', R.groupRows ? '' : r.cwd].filter(Boolean).join(' · ');
+  const cls = ['row', r.asks ? 'asking' : '', r.status === 'question' ? 'question' : '', R.isEnded(r) ? 'ended' : ''].filter(Boolean).join(' ');
+  const button = h('button', { type: 'button', class: cls, 'data-key': r.key, 'aria-pressed': r.key === selKey ? 'true' : 'false',
     title: r.cwd, '@click': () => select(r.key) },
-    h('span', { class: 'row-top' }, h('span', { class: `pill ${pillCls}` }, h('span', { class: 'dot' }), h('span', { text: pillText }))),
+    h('span', { class: 'row-top' }, kindMark(r), h('span', { class: `pill ${pill.cls}` }, h('span', { class: 'dot' }), h('span', { text: pill.text }))),
     h('span', { class: 'row-name', text: r.name || '(名前なし)' }),
+    worktree ? h('span', { class: 'row-sub', text: `worktree: ${worktree}` }) : null,
     h('span', { class: 'row-sub', text: sub }));
+  // ボタンの役割（押下状態）が読み上げられるよう、listitem は外側の要素に付ける
+  return h('div', { class: 'row-li', role: 'listitem' }, button);
+}
+function groupEl(g, i) {
+  const headId = `grp${i}`;
+  return h('div', { class: 'grp', role: 'listitem' },
+    h('h2', { class: 'grp-h', id: headId, title: g.path || null },
+      h('span', { class: 'grp-top' }, h('span', { class: 'grp-name', text: g.name }), g.hint ? h('span', { class: 'grp-hint', text: `（${g.hint}）` }) : null),
+      g.path ? h('span', { class: 'grp-path', text: g.path }) : null),
+    h('div', { class: 'grp-rows', role: 'list', 'aria-labelledby': headId }, g.items.map(({ row, worktree }) => rowEl(row, worktree))));
 }
 
 function renderList(rows) {
@@ -309,7 +362,7 @@ function renderList(rows) {
     $('#list').replaceChildren(h('div', { class: 'empty-list', text: termsOk ? '端末もセッションもありません。上の「新しく起動」から始めてください' : '読み込み中…' }));
     return;
   }
-  replaceKeepFocus($('#list'), rows.map(rowEl), 'data-key');
+  replaceKeepFocus($('#list'), R.groupRows ? R.groupRows(rows).map(groupEl) : rows.map((r) => rowEl(r)), 'data-key');
 }
 
 function select(key) { selKey = key; renderAll(); }
@@ -332,6 +385,8 @@ function syncCenter() {
   if (mount && mount.name !== termName) teardown();
   if (termName && !mount) mountTerm(termName);
 
+  const mark = row ? kindMark(row) : null;
+  $('#ckind').replaceChildren(...(mark ? [mark] : []));
   $('#ttl').textContent = row ? row.name : '';
   $('#sub').textContent = row ? [termLabel(row), row.cwd].filter(Boolean).join(' · ') : '';
   $('#killBtn').hidden = !termName;
