@@ -27,6 +27,40 @@
 ## スナップショット（`/stream?key=`）の追加
 `sessions[].title`（セッション名。付いているときだけ）、`sessions[].term`（端末名。画面から起動したセッションのみ）、`sessions[].files: [{ path, t, tool }]`（古い順、最大30）。`cwd`・`name`・`status`（idle|running|waiting|ended）・`asks`・`questions` は既存。
 
+## 使用状況（`server/usage.mjs`）
+5 時間・7 日間の利用枠と、セッションごとのコンテキスト使用量を表示するためのデータ。利用者の statusline スクリプトが、Claude Code から stdin で受けた JSON をそのまま送り、サーバーが必要な項目だけを抜き出す。
+
+### API
+`POST /api/usage` → 204。`content-type: application/json` 以外は 415、本文が 64KB を超えたら 413、不正な JSON やオブジェクトでない値は 400。
+
+読む項目は次だけで、どれも無くてよい。型や範囲が不正な項目はその項目だけ捨て、残りは使う。
+
+| 項目 | 有効な値 |
+|---|---|
+| `session_id` | 1〜256 文字 |
+| `model.display_name` | 1〜100 文字 |
+| `context_window.used_percentage` | 0〜100 |
+| `context_window.total_input_tokens` | 0〜1e9 の整数 |
+| `context_window.context_window_size` | 1〜1e9 の整数 |
+| `rate_limits.{five_hour,seven_day}.used_percentage` | 0〜100 |
+| `rate_limits.{five_hour,seven_day}.resets_at` | epoch 秒。正の値で、現在より先は `five_hour` が 6 時間、`seven_day` が 8 日まで |
+
+### 保持と配信
+- 利用枠はアカウント全体のものなので、サーバーで最新の 1 つだけを持つ。`used_percentage` が有効な枠を、枠ごと丸ごと置き換える。今回無い枠は前の値を残す。
+- 保存済みより `resets_at` が古い枠は、放置されたセッションの古い値として無視する。どちらかに `resets_at` が無ければ比べずに置き換え、同じ `resets_at` なら最後の値を採る。
+- 遠すぎる `resets_at` を受け付けないのは、一度受けると以後の値が古いと扱われ、枠が固まるため。
+- 利用枠は `/api/clear` では消えず、サーバーの再起動で消える。`resets_at` を過ぎた枠もそのまま返す。
+- コンテキストはサーバーが知っているセッションにだけ付ける。セッションは作らず、`updatedAt`（一覧の並びと TTL）も変えない。`context_window` に有効な項目があれば投稿の内容に丸ごと置き換え、1 つも無ければ前の値を残す。セッションと一緒に消える。
+- 値が変わったときだけ配信する（statusline は頻繁に呼ばれる）。
+
+### スナップショット（`/stream`, `/api/state`）の追加
+- `usage`: `{ five_hour?: { used_percentage, resets_at? }, seven_day?: { used_percentage, resets_at? } }`。データが無ければ `null`。
+- `sessions[].context`: `{ used_percentage?, tokens?, window?, model? }`（`tokens` は `total_input_tokens`、`window` は `context_window_size`）。無ければ付けない。
+
+### 信頼と公開範囲
+- 送信は `/event` と同じ扱い。トークンは不要で、Host / Origin の検証はある。サーバーに届く相手は偽の値を送れるが、変わるのは使用状況の表示だけ。
+- 読めるのはトークンを持つ読み手だけ。持たない読み手には `usage: null` を返し、`sessions[].context` は含めない（`term`・`files` と同じ扱い）。
+
 ## 画面（`/workspace` = `server/public/workspace.html`）
 3列。左: 一覧、中央: 端末、右: プレビュー。分担（盤面）は埋め込まず、ヘッダーの「盤面のみ」リンクで開く。端末と同じ内容の繰り返しになり、端末の高さを削るため。
 - 左の一覧: スナップショットのセッション（`ended` は薄く）と、`/api/term` の端末を合わせる。`session.term === term.name` は1行にまとめる。セッション未登録の端末（起動直後・シェル）も出す。状態を色と文字で示し、回答待ち（`asks` あり）は最優先で目立たせる。1つの端末に複数セッションがある場合は更新が新しいものを使う。`/api/term` は 3 秒ごとに取り直す。

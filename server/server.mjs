@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { allowedHosts, checkRequest, loadOrCreateToken, mayReceiveToken, tokensEqual } from './auth.mjs';
 import { AskStore, KINDS } from './asks.mjs';
 import { createWorkspace, recordWorkspace } from './workspace.mjs';
+import { UsageStore } from './usage.mjs';
 
 const PORT = Number(process.env.AGENT_VIZ_PORT || 4777);
 const HOST = process.env.AGENT_VIZ_HOST || '127.0.0.1';
@@ -25,6 +26,8 @@ const asks = new AskStore({ onChange: scheduleBroadcast });
 /** @type {Map<string, any>} */
 const sessions = new Map();
 const clients = new Set();
+// statusline から届く使用状況（利用枠と、セッションごとのコンテキスト使用量）
+const usage = new UsageStore({ sessions, onChange: scheduleBroadcast });
 // ワークスペース画面（端末・プレビュー）。AGENT_VIZ_TERMINAL=0 で端末の操作を無効にする
 const workspace = createWorkspace({ port: PORT, token: TOKEN, sessions, enabled: process.env.AGENT_VIZ_TERMINAL !== '0' });
 const PAGES = {
@@ -242,7 +245,7 @@ function handle(ev) {
   scheduleBroadcast();
 }
 
-// redact=true のとき、ask の中身（コマンド・質問文など）は含めない（トークンを持たない読み手向け）
+// redact=true のとき、ask の中身（コマンド・質問文など）・端末名・ファイル・使用状況は含めない（トークンを持たない読み手向け）
 function snapshot(redact = false) {
   const now = Date.now();
   for (const [id, s] of sessions) {
@@ -255,6 +258,7 @@ function snapshot(redact = false) {
   return {
     now,
     settings: asks.publicSettings(),
+    usage: redact ? null : usage.snapshot(),
     sessions: [...sessions.values()]
       .sort((x, y) => y.updatedAt - x.updatedAt)
       .map(({ pending, ...rest }) => ({
@@ -265,6 +269,7 @@ function snapshot(redact = false) {
         asks: redact ? [] : asks.listFor(rest.id),
         term: redact ? undefined : rest.term,
         files: redact ? [] : rest.files || [],
+        context: redact ? undefined : rest.context,
       })),
   };
 }
@@ -413,6 +418,16 @@ async function apiSettings(req, res) {
   res.writeHead(204).end();
 }
 
+// statusline が送る使用状況。信頼は /event と同じ（トークン不要、JSON 以外は受けない）
+async function apiUsage(req, res) {
+  if (!String(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) {
+    req.resume();
+    throw new HttpError(415, 'content-type must be application/json');
+  }
+  usage.record(await readJson(req, SMALL_BODY));
+  res.writeHead(204).end();
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   const check = checkRequest(req, { allowed: ALLOWED, token: TOKEN, needToken: TOKEN_PATHS.has(url.pathname) });
@@ -425,6 +440,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && url.pathname === '/api/answer') return handleApi(res, () => apiAnswer(req, res));
   if (req.method === 'POST' && url.pathname === '/api/presence') return handleApi(res, () => apiPresence(req, res));
   if (req.method === 'POST' && url.pathname === '/api/settings') return handleApi(res, () => apiSettings(req, res));
+  if (req.method === 'POST' && url.pathname === '/api/usage') return handleApi(res, () => apiUsage(req, res));
 
   if (req.method === 'POST' && url.pathname === '/event') {
     // 既存の hook 互換のためトークンは不要。JSON 以外は受けない（ブラウザの text/plain 送信を弾く）
