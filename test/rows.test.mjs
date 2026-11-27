@@ -51,9 +51,14 @@ describe('rows: 行の状態', () => {
   });
 
   it('盤面と同じく、作業中でなく質問が残っている行は「疑問あり」', () => {
-    for (const status of ['idle', 'waiting', 'ended']) assert.equal(rowStatus(null, ses(status, q)), 'question', status);
+    for (const status of ['idle', 'waiting']) assert.equal(rowStatus(null, ses(status, q)), 'question', status);
     assert.equal(rowStatus(claude, ses('idle', q)), 'question');
     assert.equal(rowStatus(bash, ses('idle', q)), 'question');
+  });
+
+  it('終了したセッションは、質問が残っていても「疑問あり」にしない（盤面とは違う）', () => {
+    assert.equal(rowStatus(null, ses('ended', q)), 'ended');
+    assert.equal(rowStatus(null, ses('ended', q, { agents: [{ turn: 2, status: 'running' }] })), 'ended');
   });
 
   it('作業中は、質問があっても作業中のまま', () => {
@@ -111,6 +116,7 @@ describe('rows: 状態の表示', () => {
     assert.deepEqual(pill(claude, { status: 'idle' }), { cls: 'idle', text: '待機中' });
     assert.deepEqual(pill(null, { status: 'idle', questions: ['？'] }), { cls: 'question', text: '疑問あり' });
     assert.deepEqual(pill(null, { status: 'ended' }), { cls: 'ended', text: '終了' });
+    assert.deepEqual(pill(null, { status: 'ended', questions: ['？'] }), { cls: 'ended', text: '終了' });
   });
 });
 
@@ -126,6 +132,15 @@ describe('rows: 行の順', () => {
       { key: 'ask', status: 'running', asks: 1, updated: 0 },
     ];
     assert.deepEqual(rows.sort(compareRows).map((r) => r.key), ['ask', 'q', 'wait', 'run', 'idle-new', 'idle', 'ended']);
+  });
+
+  it('質問が残った終了セッションの行は、終了の順位（グループも終了だけの段）', () => {
+    const s = { status: 'ended', questions: ['？'] };
+    const ended = row('/p/a-ended', { status: rowStatus(null, s), s, updated: 9 });
+    const idle = row('/p/b-idle', { updated: 1 });
+    assert.deepEqual([ended, idle].sort(compareRows).map((r) => r.key), [idle.key, ended.key]);
+    const g = groupRows([ended, idle]);
+    assert.deepEqual(g.map((x) => [x.name, x.tier]), [['b-idle', 1], ['a-ended', 2]]);
   });
 });
 

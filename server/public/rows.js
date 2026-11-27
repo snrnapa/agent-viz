@@ -11,10 +11,12 @@
     return s && s.status !== 'ended' ? 'claude' : 'shell';
   }
 
-  // 盤面（index.html）と同じ判定: 作業中でなく、質問が残っている。
-  // 今のターンのサブエージェントが作業中の間は、確認待ちを除いて作業の途中とみなす
+  // 作業中でも終了でもなく、質問が残っている。
+  // 今のターンのサブエージェントが作業中の間は、確認待ちを除いて作業の途中とみなす。
+  // 盤面（index.html）との違い: 盤面は終了したセッションも質問が残れば疑問扱いにするが、
+  // 一覧では終了にする（もう答えられないセッションを上に並べない）
   function asksBack(s) {
-    if (!s?.questions?.length || s.status === 'running') return false;
+    if (!s?.questions?.length || s.status === 'running' || s.status === 'ended') return false;
     return s.status === 'waiting' || !s.agents?.some((a) => a.turn === s.turn && a.status === 'running');
   }
 

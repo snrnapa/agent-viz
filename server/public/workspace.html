@@ -96,7 +96,7 @@ header a { color: var(--sub); font-size: 13px; }
 #ckind { display: inline-flex; flex: none; }
 #ckind:empty { display: none; }
 #ckind .kind.off { opacity: .55; }
-.pill {white-space: nowrap; flex: none; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px;
+.pill { white-space: nowrap; flex: none; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px;
   display: inline-flex; align-items: center; gap: 5px; }
 .pill.running { color: var(--run); background: color-mix(in srgb, var(--run) 12%, transparent); }
 .pill.done, .pill.idle { color: var(--done); background: color-mix(in srgb, var(--done) 12%, transparent); }
@@ -211,11 +211,12 @@ const enc = encodeURIComponent;
 const KIND = { claude: { mark: 'AI', label: 'Claude' }, shell: { mark: '$', label: 'シェル' } };
 // このページはサーバーが読み直すたびに新しくなるが、起動中の古いサーバーは新しいスクリプトを配らない。
 // /rows.js が無いときは、種類マークとグループ分けの無い一覧にする
+const FALLBACK_STATUS_LABEL = { running: '作業中', done: '完了', question: '疑問あり', idle: '待機中', waiting: 'あなたの確認待ち', ended: '終了' };
 const R = globalThis.AgentVizRows || {
   rowKind: () => '',
   rowStatus: (t, s) => s?.status || 'idle',
   rowPill: ({ s, asks, status }) => (asks ? { cls: 'asking', text: '回答待ち' }
-    : { cls: status, text: s ? status : 'セッション待ち' }),
+    : { cls: status, text: s ? FALLBACK_STATUS_LABEL[status] || status : 'セッション待ち' }),
   isEnded: ({ t, s }) => !t && s?.status === 'ended',
   compareRows: (a, b) => b.asks - a.asks || b.updated - a.updated,
   groupRows: null,
