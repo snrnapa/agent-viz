@@ -145,6 +145,41 @@ tmux -L agent-viz-4777 attach -t <名前>
 - サーバーを再起動しても、画面から起動した端末は残ります。一覧には再び出ます。端末を消すには「終了」を押すか、`tmux -L agent-viz-4777 kill-server` で専用のサーバーごと止めます。
 - 端末は専用の tmux ソケット（`agent-viz-<ポート>`）で動くので、普段お使いの tmux には影響しません。
 
+### 使用状況（利用枠とコンテキスト使用量）
+
+ヘッダーに 5 時間・7 日間の利用枠（使用率とリセットまでの残り時間）、左の一覧の行にコンテキスト使用量（50% 以上は「注意」、80% 以上は「警告」）を表示します。データは、statusline のスクリプトが Claude Code から受け取った JSON をそのまま送ることで届くので、次の設定が必要です（`curl` を使います）。
+
+**statusline を使っている場合**は、bash のスクリプトに次を足します（`<<<` は bash の書き方で、`sh` のスクリプトでは構文エラーになります）。
+
+```bash
+input=$(cat)
+curl -s -m 1 --noproxy 127.0.0.1 -X POST -H 'content-type: application/json' --data-binary @- "http://127.0.0.1:${AGENT_VIZ_PORT:-4777}/api/usage" >/dev/null 2>&1 <<<"$input" &
+```
+
+標準入力は 1 回しか読めません。すでに `input=$(cat)` のように読んでいるときは `curl` の行だけを足して、`"$input"` をその変数名に合わせます。送信はバックグラウンドで最長 1 秒で、サーバーが動いていなくても statusline の表示は変わりません。
+
+**statusline を使っていない場合**は、次の内容を `~/.claude/agent-viz-statusline.sh` に保存します。
+
+```bash
+#!/usr/bin/env bash
+input=$(cat)
+curl -s -m 1 --noproxy 127.0.0.1 -X POST -H 'content-type: application/json' --data-binary @- "http://127.0.0.1:${AGENT_VIZ_PORT:-4777}/api/usage" >/dev/null 2>&1 <<<"$input" &
+echo 'agent-viz'  # この出力が statusline に表示されます
+```
+
+そして `~/.claude/settings.json` に `statusLine` を追加します（ほかの設定があれば、残したまま足します）。
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/agent-viz-statusline.sh"
+  }
+}
+```
+
+値は、statusline が次に実行されたとき（応答が届いたときなど）に反映されます。利用枠は claude.ai のサブスクリプション（Pro・Max など）で、セッションの最初の応答があった後にだけ届きます。利用枠はサーバーを再起動すると消え、次に届くまで表示されません。
+
 ## 設定（環境変数）
 
 | 変数 | 既定値 | 内容 |

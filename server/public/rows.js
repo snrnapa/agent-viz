@@ -1,4 +1,4 @@
-// ワークスペース画面の左の一覧の、行の種類・状態・並び順・ディレクトリ分け（DOM を使わない関数だけ）。
+// ワークスペース画面の左の一覧の行の種類・状態・並び順・ディレクトリ分けと、使用状況の表示内容（DOM を使わない関数だけ）。
 // 画面（classic script）と node:test の両方で使う。
 (() => {
   const UNKNOWN = '場所不明';
@@ -102,5 +102,52 @@
     return groups.sort((a, b) => a.tier - b.tier || !a.path - !b.path || a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
   }
 
-  globalThis.AgentVizRows = { rowKind, rowStatus, rowPill, isEnded, compareRows, groupRows };
+  // ===== 使用状況（利用枠とコンテキスト使用量）。データの形は docs/workspace-design.md の「使用状況」 =====
+  const STALE_TEXT = '古い値（リセット済み）';
+  const isPercent = (v) => typeof v === 'number' && v >= 0 && v <= 100;
+  // 小数は切り捨てる（79.9 を 80% と出して「注意」のままにしない）
+  const percent = (v) => ({ value: Math.floor(v), text: `${Math.floor(v)}%` });
+
+  /** コンテキスト使用量の段階: ''、'caution'（50% 以上）、'warn'（80% 以上） */
+  const contextLevel = (p) => (p >= 80 ? 'warn' : p >= 50 ? 'caution' : '');
+  const LEVEL_LABEL = { '': '', caution: '注意', warn: '警告' };
+
+  /** 行に出すコンテキスト使用量。出さないときは null */
+  function rowContext({ t, s }) {
+    const p = s?.context?.used_percentage;
+    // 端末のある行の終了したセッションは前のもの（シェルに戻った行・次の起動直後の行）
+    if (!isPercent(p) || (t && s.status === 'ended')) return null;
+    const level = contextLevel(p);
+    return { ...percent(p), level, label: LEVEL_LABEL[level] };
+  }
+
+  const hasReset = (resetsAt) => Number.isFinite(resetsAt) && resetsAt > 0;
+  const isPast = (resetsAt, nowMs) => hasReset(resetsAt) && resetsAt * 1000 <= nowMs;
+
+  /** resets_at（epoch 秒）までの残り時間の文字列。過ぎていれば古い値の表示、値が無ければ空 */
+  function remainingText(resetsAt, nowMs) {
+    if (!hasReset(resetsAt)) return '';
+    if (isPast(resetsAt, nowMs)) return STALE_TEXT;
+    const min = Math.floor((resetsAt * 1000 - nowMs) / 60000);
+    const d = Math.floor(min / 1440);
+    const h = Math.floor((min % 1440) / 60);
+    const m = min % 60;
+    if (d) return `あと ${d}日${h ? `${h}時間` : ''}`;
+    if (h) return `あと ${h}時間${m ? `${m}分` : ''}`;
+    return m ? `あと ${m}分` : 'あと 1分未満';
+  }
+
+  const LIMITS = [['five_hour', '5時間'], ['seven_day', '7日間']];
+
+  /** ヘッダーに出す利用枠（5時間、7日間の順）。データが無ければ空 */
+  function usageItems(usage, nowMs) {
+    return LIMITS.flatMap(([key, name]) => {
+      const w = usage?.[key];
+      if (!isPercent(w?.used_percentage)) return [];
+      return [{ key, name, ...percent(w.used_percentage), stale: isPast(w.resets_at, nowMs), remain: remainingText(w.resets_at, nowMs) }];
+    });
+  }
+
+  globalThis.AgentVizRows = { rowKind, rowStatus, rowPill, isEnded, compareRows, groupRows,
+    contextLevel, rowContext, remainingText, usageItems };
 })();

@@ -1,9 +1,10 @@
-// server/public/rows.js（左の一覧の行の種類・状態・並び順・ディレクトリ分け）の単体テスト。
+// server/public/rows.js（左の一覧の行の種類・状態・並び順・ディレクトリ分けと、使用状況の表示内容）の単体テスト。
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import '../server/public/rows.js';
 
-const { rowKind, rowStatus, rowPill, isEnded, compareRows, groupRows } = globalThis.AgentVizRows;
+const { rowKind, rowStatus, rowPill, isEnded, compareRows, groupRows,
+  contextLevel, rowContext, remainingText, usageItems } = globalThis.AgentVizRows;
 
 let n = 0;
 const row = (cwd, extra = {}) => ({ key: `k${++n}`, cwd, status: 'idle', asks: 0, updated: 0, t: null, ...extra });
@@ -141,6 +142,110 @@ describe('rows: 行の順', () => {
     assert.deepEqual([ended, idle].sort(compareRows).map((r) => r.key), [idle.key, ended.key]);
     const g = groupRows([ended, idle]);
     assert.deepEqual(g.map((x) => [x.name, x.tier]), [['b-idle', 1], ['a-ended', 2]]);
+  });
+});
+
+describe('rows: コンテキスト使用量', () => {
+  const ses = (used_percentage, status = 'idle') => ({ status, context: { used_percentage, tokens: 1000, window: 200000 } });
+
+  it('50% 以上は注意、80% 以上は警告', () => {
+    const cases = [[0, ''], [49.9, ''], [50, 'caution'], [79.9, 'caution'], [80, 'warn'], [100, 'warn']];
+    for (const [p, level] of cases) assert.equal(contextLevel(p), level, String(p));
+  });
+
+  it('数値と段階のラベルを返す。小数は切り捨て（表示の数値と段階が食い違わない）', () => {
+    assert.deepEqual(rowContext({ t: null, s: ses(0) }), { value: 0, text: '0%', level: '', label: '' });
+    assert.deepEqual(rowContext({ t: null, s: ses(49.9) }), { value: 49, text: '49%', level: '', label: '' });
+    assert.deepEqual(rowContext({ t: null, s: ses(50) }), { value: 50, text: '50%', level: 'caution', label: '注意' });
+    assert.deepEqual(rowContext({ t: null, s: ses(79.9) }), { value: 79, text: '79%', level: 'caution', label: '注意' });
+    assert.deepEqual(rowContext({ t: null, s: ses(80) }), { value: 80, text: '80%', level: 'warn', label: '警告' });
+    assert.deepEqual(rowContext({ t: null, s: ses(100) }), { value: 100, text: '100%', level: 'warn', label: '警告' });
+  });
+
+  it('セッションや context、使用率が無い行には出さない', () => {
+    const sessions = [null, undefined, {}, { context: null }, { context: {} }, { context: { tokens: 10, window: 100 } }];
+    for (const s of sessions) assert.equal(rowContext({ t: null, s }), null, JSON.stringify(s));
+    assert.equal(rowContext({ t: claude, s: null }), null);
+    for (const bad of [null, '50', NaN, Infinity, -1, 101]) assert.equal(rowContext({ t: null, s: ses(bad) }), null, String(bad));
+  });
+
+  it('端末のある行は、終了したセッションの値を出さない（シェルに戻った行・次の起動直後の行）', () => {
+    assert.equal(rowContext({ t: bash, s: ses(90, 'ended') }), null);
+    assert.equal(rowContext({ t: claude, s: ses(90, 'ended') }), null);
+  });
+
+  it('端末のある行でも未終了なら出す。画面外の終了した行は、そのセッションの値を出す', () => {
+    for (const status of ['idle', 'running', 'waiting']) {
+      assert.equal(rowContext({ t: claude, s: ses(10, status) })?.text, '10%', status);
+      assert.equal(rowContext({ t: bash, s: ses(10, status) })?.text, '10%', status);
+    }
+    assert.equal(rowContext({ t: null, s: ses(10, 'ended') })?.text, '10%');
+  });
+});
+
+const NOW = 1_800_000_000_000; // ミリ秒
+const after = (sec) => NOW / 1000 + sec; // resets_at（epoch 秒）
+const STALE = '古い値（リセット済み）';
+
+describe('rows: リセットまでの残り時間', () => {
+  const HOUR = 3600;
+  const DAY = 86400;
+
+  it('分・時間・日で表す（切り捨て。0 の下の単位は省く）', () => {
+    const cases = [
+      [1, 'あと 1分未満'], [59, 'あと 1分未満'], [60, 'あと 1分'], [HOUR - 1, 'あと 59分'],
+      [HOUR, 'あと 1時間'], [2 * HOUR + 13 * 60 + 59, 'あと 2時間13分'], [DAY - 1, 'あと 23時間59分'],
+      [DAY, 'あと 1日'], [DAY + 59 * 60, 'あと 1日'], [3 * DAY + 4 * HOUR + 30 * 60, 'あと 3日4時間'],
+    ];
+    for (const [sec, text] of cases) assert.equal(remainingText(after(sec), NOW), text, String(sec));
+  });
+
+  it('resets_at を過ぎていれば、古い値と分かる文字にする', () => {
+    for (const sec of [0, -1, -10 * DAY]) assert.equal(remainingText(after(sec), NOW), STALE, String(sec));
+  });
+
+  it('resets_at が無いか不正なら空', () => {
+    for (const bad of [undefined, null, '1800000000', NaN, Infinity, 0, -5]) assert.equal(remainingText(bad, NOW), '', String(bad));
+  });
+});
+
+describe('rows: 利用枠の表示', () => {
+  const five = { used_percentage: 23.5, resets_at: after(2 * 3600) };
+  const seven = { used_percentage: 41, resets_at: after(3 * 86400) };
+
+  it('データが無ければ空（null、古いサーバーの undefined、空や不正な値）', () => {
+    for (const u of [undefined, null, {}, 'x', 1, [], { five_hour: null }, { five_hour: {} }]) {
+      assert.deepEqual(usageItems(u, NOW), [], JSON.stringify(u));
+    }
+  });
+
+  it('5時間、7日間の順に、使用率と残り時間を返す', () => {
+    assert.deepEqual(usageItems({ seven_day: seven, five_hour: five }, NOW), [
+      { key: 'five_hour', name: '5時間', value: 23, text: '23%', stale: false, remain: 'あと 2時間' },
+      { key: 'seven_day', name: '7日間', value: 41, text: '41%', stale: false, remain: 'あと 3日' },
+    ]);
+  });
+
+  it('片方だけでも出す。使用率が不正な枠は出さない', () => {
+    assert.deepEqual(usageItems({ seven_day: seven }, NOW).map((x) => x.key), ['seven_day']);
+    assert.deepEqual(usageItems({ five_hour: five }, NOW).map((x) => x.key), ['five_hour']);
+    for (const bad of [undefined, null, '5', NaN, -1, 101]) {
+      assert.deepEqual(usageItems({ five_hour: { ...five, used_percentage: bad }, seven_day: seven }, NOW).map((x) => x.key), ['seven_day'], String(bad));
+    }
+  });
+
+  it('resets_at が無ければ、残り時間なしで古い扱いにもしない', () => {
+    assert.deepEqual(usageItems({ five_hour: { used_percentage: 0 } }, NOW), [
+      { key: 'five_hour', name: '5時間', value: 0, text: '0%', stale: false, remain: '' },
+    ]);
+  });
+
+  it('resets_at を過ぎた枠は stale。時間が進むと、同じデータでも残り時間と stale が変わる', () => {
+    const u = { five_hour: { used_percentage: 100, resets_at: after(90) } };
+    const at = (sec) => usageItems(u, NOW + sec * 1000)[0];
+    assert.deepEqual([at(0).remain, at(0).stale], ['あと 1分', false]);
+    assert.deepEqual([at(60).remain, at(60).stale], ['あと 1分未満', false]);
+    assert.deepEqual([at(90).remain, at(90).stale, at(90).text], [STALE, true, '100%']);
   });
 });
 

@@ -31,12 +31,24 @@
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); display: flex; flex-direction: column; height: 100vh; overflow: hidden;
   font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; }
-header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex: none; }
 header h1 { font-size: 16px; margin: 0; letter-spacing: .02em; }
 header .sp { flex: 1; }
 header a { color: var(--sub); font-size: 13px; }
 .conn { width: 9px; height: 9px; border-radius: 50%; background: var(--q); flex: none; }
 .conn.ok { background: var(--done); }
+/* 使用状況: バー（ヘッダーの利用枠と、一覧のコンテキストで共通） */
+.meter { display: block; height: 6px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--sub) 22%, transparent); }
+.meter-fill { display: block; height: 100%; background: var(--done); }
+.usage { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; min-width: 0; margin-left: 8px; font-size: 12px; color: var(--sub); }
+.usage-hint { min-width: 0; overflow-wrap: anywhere; }
+.lim { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; }
+.lim-name { font-weight: 600; white-space: nowrap; }
+.lim .meter { flex: 0 1 80px; width: 80px; min-width: 32px; }
+.lim-val { color: var(--ink); font-weight: 700; min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.lim-rest { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.lim.stale .meter-fill { background: var(--sub); opacity: .6; }
+.lim.stale .lim-val { color: var(--sub); font-weight: 400; }
 .gate { padding: 80px 16px; text-align: center; color: var(--sub); }
 .app { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(240px, 340px); }
 .side, .center { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
@@ -79,6 +91,15 @@ header a { color: var(--sub); font-size: 13px; }
 .row-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-sub { font-size: 11.5px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-li { display: flex; min-width: 0; }
+/* コンテキスト使用量。段階は色に加えて「注意」「警告」の文字でも示す */
+.ctx { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; color: var(--sub); }
+.ctx-name, .ctx-val { white-space: nowrap; }
+.ctx .meter { flex: 1 1 0; min-width: 24px; }
+.ctx-val { font-variant-numeric: tabular-nums; }
+.ctx.caution .meter-fill { background: var(--wait); }
+.ctx.warn .meter-fill { background: var(--q); }
+.ctx.caution .ctx-val { color: color-mix(in srgb, var(--wait) 55%, var(--ink)); font-weight: 700; }
+.ctx.warn .ctx-val { color: color-mix(in srgb, var(--q) 80%, var(--ink)); font-weight: 700; }
 /* ディレクトリごとのまとまり */
 .grp, .grp-rows { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .grp + .grp { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 2px; }
@@ -139,6 +160,7 @@ details.preview > summary { cursor: pointer; padding: 10px 12px; font-weight: 60
 @media (max-width: 900px) {
   body { height: auto; min-height: 100vh; overflow: auto; }
   header { padding: 10px 16px; }
+  .usage { order: 1; flex-basis: 100%; margin-left: 0; }
   .app { display: flex; flex-direction: column; flex: none; }
   .side.left, .side.right { border: 0; border-bottom: 1px solid var(--line); }
   .side.left .list { max-height: 40vh; flex: none; }
@@ -154,6 +176,7 @@ details.preview > summary { cursor: pointer; padding: 10px 12px; font-weight: 60
 <header>
   <span class="conn" id="conn" title="サーバー接続"></span>
   <h1>ワークスペース</h1>
+  <div class="usage" id="usage" role="group" aria-label="利用枠の使用状況" hidden></div>
   <span class="sp"></span>
   <a id="boardLink" href="/">盤面のみ</a>
 </header>
@@ -210,7 +233,7 @@ const KEY_PARAM = new URLSearchParams(location.search).get('key') || '';
 const enc = encodeURIComponent;
 const KIND = { claude: { mark: 'AI', label: 'Claude' }, shell: { mark: '$', label: 'シェル' } };
 // このページはサーバーが読み直すたびに新しくなるが、起動中の古いサーバーは新しいスクリプトを配らない。
-// /rows.js が無いときは、種類マークとグループ分けの無い一覧にする
+// /rows.js が無いときは、種類マーク・グループ分け・使用状況の無い一覧にする
 const FALLBACK_STATUS_LABEL = { running: '作業中', done: '完了', question: '疑問あり', idle: '待機中', waiting: 'あなたの確認待ち', ended: '終了' };
 const R = globalThis.AgentVizRows || {
   rowKind: () => '',
@@ -220,7 +243,10 @@ const R = globalThis.AgentVizRows || {
   isEnded: ({ t, s }) => !t && s?.status === 'ended',
   compareRows: (a, b) => b.asks - a.asks || b.updated - a.updated,
   groupRows: null,
+  rowContext: () => null,
+  usageItems: () => [],
 };
+const USAGE_HINT = '使用状況は未取得です（statusline の設定方法は README を参照）';
 const MODE_LABEL = { claude: 'claude', continue: 'claude --continue（前回の続き）', shell: 'シェル' };
 const LS = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -228,6 +254,8 @@ const LS = {
 };
 
 let sessions = [];      // スナップショットの sessions
+let usage;              // スナップショットの usage（データが無ければ null。最初のスナップショットが届くまで undefined）
+let usageShown = '';    // ヘッダーに描画中の内容
 let terms = [];         // GET /api/term の terms
 let modesLoaded = false;
 let termErr = '';
@@ -297,6 +325,43 @@ function replaceKeepFocus(container, items, attr) {
   }
 }
 
+// ===== 使用状況 =====
+// 使用率のバー。value は 0〜100
+function meterEl(value, label, valueText) {
+  const fill = h('span', { class: 'meter-fill' });
+  fill.style.width = `${value}%`;
+  return h('span', { class: 'meter', role: 'meter', 'aria-label': label, 'aria-valuemin': 0, 'aria-valuemax': 100,
+    'aria-valuenow': value, 'aria-valuetext': valueText }, fill);
+}
+function limitEl(x) {
+  return h('span', { class: `lim${x.stale ? ' stale' : ''}` },
+    h('span', { class: 'lim-name', text: x.name }),
+    meterEl(x.value, `${x.name}の利用枠の使用率`, [x.text, x.remain].filter(Boolean).join('、')),
+    h('span', { class: 'lim-val', text: x.text }),
+    x.remain ? h('span', { class: 'lim-rest', text: x.remain }) : null);
+}
+// ヘッダーの利用枠だけを描く（一覧と端末には触れない）。残り時間を進めるためにタイマーでも呼ぶ
+function renderUsage() {
+  if (usage === undefined) return;
+  const items = R.usageItems(usage, Date.now());
+  const want = JSON.stringify(items);
+  if (want === usageShown) return;
+  usageShown = want;
+  const box = $('#usage');
+  box.replaceChildren(...(items.length ? items.map(limitEl) : [h('span', { class: 'usage-hint', text: USAGE_HINT })]));
+  box.hidden = false;
+}
+// 一覧の行のコンテキスト使用量。出すものが無ければ null
+function contextEl(r) {
+  const c = R.rowContext(r);
+  if (!c) return null;
+  const text = [c.text, c.label].filter(Boolean).join(' ');
+  return h('span', { class: `ctx ${c.level}` },
+    h('span', { class: 'ctx-name', text: 'コンテキスト' }),
+    meterEl(c.value, 'コンテキスト使用量', text),
+    h('span', { class: 'ctx-val', text }));
+}
+
 // ===== 行（端末とセッションを1行にまとめる）=====
 function buildRows() {
   const names = new Set(terms.map((t) => t.name));
@@ -345,7 +410,8 @@ function rowEl(r, worktree) {
     h('span', { class: 'row-top' }, kindMark(r), h('span', { class: `pill ${pill.cls}` }, h('span', { class: 'dot' }), h('span', { text: pill.text }))),
     h('span', { class: 'row-name', text: r.name || '(名前なし)' }),
     worktree ? h('span', { class: 'row-sub', text: `worktree: ${worktree}` }) : null,
-    h('span', { class: 'row-sub', text: sub }));
+    h('span', { class: 'row-sub', text: sub }),
+    contextEl(r));
   // ボタンの役割（押下状態）が読み上げられるよう、listitem は外側の要素に付ける
   return h('div', { class: 'row-li', role: 'listitem' }, button);
 }
@@ -689,7 +755,12 @@ function connect() {
   const es = new EventSource(`/stream?key=${enc(TOKEN)}`);
   es.onopen = () => $('#conn').classList.add('ok');
   es.onmessage = (m) => {
-    try { sessions = JSON.parse(m.data).sessions || []; } catch { return; }
+    try {
+      const snap = JSON.parse(m.data);
+      sessions = snap.sessions || [];
+      usage = snap.usage || null; // 古いサーバーは送らない
+    } catch { return; }
+    renderUsage();
     renderAll();
   };
   es.onerror = () => $('#conn').classList.remove('ok');
@@ -708,6 +779,7 @@ if (!TOKEN) {
   connect();
   refreshTerms();
   setInterval(refreshTerms, 3000);
+  setInterval(renderUsage, 10000); // リセットまでの残り時間を進める
 }
 </script>
 </body>
